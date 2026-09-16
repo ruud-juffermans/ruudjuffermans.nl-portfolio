@@ -1,0 +1,79 @@
+---
+title: "Open-data-warehouse: een Kimball-sterschema op RDW en CBS"
+industry: "Eigen project"
+summary: "End-to-end ELT-platform op Nederlandse open data: Python-ingestie, dbt-transformaties en een gedocumenteerd sterschema — met tests en CI op elke pull request."
+tags: ["dbt", "SQL", "Python", "DuckDB", "Data Engineering"]
+repo: "https://github.com/datavakwerk/nl-vehicle-warehouse"
+accent: "#3B82F6"
+stats:
+  - { label: "Sterschema", value: "3 gedocumenteerde grains" }
+  - { label: "CI op elke PR", value: "Lint + build + tests" }
+  - { label: "Vanaf nul", value: "Eén commando" }
+---
+
+*Eigen project, gebouwd om mijn aanpak te laten zien. Alles wat hier staat is echt en na te lezen in de repo.*
+
+## Waarom dit project
+
+Een data warehouse beoordeel je niet op het dashboard dat erop staat, maar op wat eronder zit: klopt de grain, zijn de definities vastgelegd, worden fouten gevangen vóór ze in een rapport belanden. Dit project bouwt dat fundament in het openbaar, op data die iedereen kan controleren.
+
+Twee publieke bronnen, allebei zonder API-sleutel te bevragen:
+
+- **RDW open data** — gekentekende voertuigen, brandstof en geconstateerde gebreken: transactiefeiten met miljoenen rijen
+- **CBS StatLine** — het motorvoertuigenpark en de gemeentelijke indeling: een periodieke snapshot op gemeenteniveau
+
+De combinatie is bewust gekozen. Twee feittabellen met een verschillende grain in één schema is precies waar dimensioneel modelleren over gaat — en waar het misgaat als je de grain niet expliciet maakt.
+
+## De architectuur
+
+```
+RDW / CBS API
+      │  Python-ingestie (incrementeel, gepagineerd, met retries)
+      ▼
+ data/raw/*.parquet
+      ▼
+ DuckDB:  staging  →  warehouse (dim_* / fct_*)  →  marts
+      ▼
+ dbt tests · dbt docs (lineage)
+```
+
+DuckDB omdat het gratis is en in CI draait. Hetzelfde dbt-project richt zich met een ander profiel op Snowflake of Databricks; de modellen zijn daarop geschreven — geen DuckDB-specifieke SQL buiten de staging-laag. De warehouse-keuze is geen onderdeel van de modellering. Dat is precies het punt.
+
+## Het sterschema
+
+Per feittabel staat de **grain** expliciet: één zin, geen interpretatie mogelijk.
+
+| Feittabel | Eén rij per… | Type |
+| --- | --- | --- |
+| `fct_voertuig_registratie` | kenteken per tenaamstelling | transactie |
+| `fct_gebrek_constatering` | geconstateerd gebrek per keuring per voertuig | transactie |
+| `fct_voertuigpark_gemeente` | gemeente per peiljaar per brandstofsoort | periodieke snapshot |
+
+Met dimensies voor datum (inclusief NL-feestdagen), gemeente, voertuigtype, brandstof en gebrek.
+
+## Ontwerpkeuzes
+
+- **Waarom deze grain.** `fct_voertuig_registratie` staat op tenaamstelling, niet op voertuig: een voertuig wisselt van eigenaar en dat is precies de gebeurtenis die je wilt kunnen tellen. Op voertuigniveau verlies je die.
+- **Waarom SCD type 2 op gemeente.** Nederland herindeelt gemiddeld elk jaar wel iets. Zonder historie verschuiven historische cijfers met terugwerkende kracht — een klassieke stille fout in stuurinformatie.
+- **Waarom incrementeel laden.** De RDW-voertuigenset is te groot voor een volledige refresh per run. Incrementeel met een watermerk op wijzigingsdatum, met een gedocumenteerde full-refresh-route voor als de brondefinitie verandert.
+- **Waarom reproduceerbaar.** Elke ingestie legt een snapshotdatum vast en de selectiequery staat in de repo. Een run is na te doen, een cijfer is na te rekenen.
+
+## Kwaliteit en CI
+
+Bij elke pull request draait GitHub Actions: `ruff` en `sqlfluff` als linters, daarna `dbt build` — modellen én tests. De dbt-tests dekken `unique` en `not_null` op elke sleutel, `relationships` van elke foreign key naar de dimensie, `accepted_values` op referentiekolommen, plus eigen tests op de grain: geen dubbele rijen per graindefinitie.
+
+Dit is dezelfde werkwijze die ik in elk team hanteer: transformaties als code, met een test op elke stap, zodat een fout opvalt vóór iemand op het cijfer stuurt.
+
+## In de repo
+
+- Ingestie vanuit RDW en CBS, incrementeel en reproduceerbaar
+- dbt-project met staging-, warehouse- en marts-laag
+- Sterschema met gedocumenteerde grain per feittabel
+- Lint, build en tests in CI
+- Architectuurdiagram en lineage-documentatie in de README
+- Publicatiepagina op de marts (Evidence)
+- Eén `make`-commando van lege map tot bevraagbaar warehouse
+
+## Technologie
+
+Python, dbt, DuckDB, SQL, GitHub Actions, ruff, sqlfluff, Make

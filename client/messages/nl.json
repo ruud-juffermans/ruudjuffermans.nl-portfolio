@@ -1,0 +1,604 @@
+{
+  "site": {
+    "title": "Ruud Juffermans — Data engineering & AI",
+    "titleTemplate": "%s | Ruud Juffermans",
+    "description": "Data engineer met een achtergrond bij het Nederlands Lucht- en Ruimtevaartcentrum en de Politie. Ik bouw de datafundamenten waar rapportage en AI op draaien — gemodelleerd, getest en gedocumenteerd.",
+    "siteName": "Ruud Juffermans — Data engineering & AI"
+  },
+  "common": {
+    "cta": "Neem contact op",
+    "contact": "Contact",
+    "login": "Inloggen",
+    "logout": "Uitloggen",
+    "readMore": "Lees meer",
+    "backToBlog": "Terug naar blog",
+    "backToProjects": "Terug naar portfolio",
+    "readingTimeSuffix": "leestijd",
+    "languageLabel": "Taal",
+    "switchToEnglish": "Engels",
+    "switchToDutch": "Nederlands",
+    "skipToContent": "Direct naar inhoud",
+    "themeLabel": "Thema",
+    "themeLight": "Licht thema",
+    "themeDark": "Donker thema",
+    "themeSystem": "Systeemvoorkeur",
+    "availableHero": "Open voor een nieuwe rol",
+    "availableFrom": "Open voor een nieuwe rol",
+    "proof": {
+      "nlr": "Data engineer bij NLR",
+      "police": "Data & AI bij de Politie",
+      "udemy": "241 cursisten met een 4.2-rating op Udemy"
+    }
+  },
+  "nav": {
+    "projects": "Portfolio",
+    "blog": "Blog",
+    "mainNavLabel": "Hoofdnavigatie",
+    "about": "Over mij",
+    "contact": "Contact"
+  },
+  "home": {
+    "metaTitle": "Ruud Juffermans — Data engineering & AI",
+    "metaDescription": "Data engineer met een achtergrond bij het NLR en de Politie. Portfolio met open projecten — een dbt-warehouse, een Kafka-streamingpipeline en een RAG-systeem — plus artikelen over hoe ik werk.",
+    "hero": {
+      "eyebrow": "Data engineering & AI",
+      "title": "Ik bouw full-stack oplossingen met moderne technologieën en volgens best practices",
+      "subtitle": "Data & AI engineer met ervaring bij NLR en de Politie. Gemodelleerde warehouses, geteste pipelines en AI-systemen in een omgeving waar zorgvuldig omgaan met vertrouwelijke en privacygevoelige data essentieel is.",
+      "ctaPrimary": "Neem contact op",
+      "ctaSecondary": "Bekijk de projecten",
+      "toolsLabel": "Dagelijks aan het werk met technologie zoals"
+    },
+    "projects": {
+      "all": "Alle projecten"
+    },
+    "services": {
+      "eyebrow": "Wat ik doe",
+      "slides": {
+        "data": {
+          "title": "Data engineering.",
+          "subtitle": "Ik ontwerp schaalbare data-oplossingen met robuuste ETL-ingestie, datamodellering, gedistribueerde verwerking en infrastructuur die kan omgaan met veranderende schema’s",
+          "diagramAlt": "Architectuur van een dataplatform in vijf lagen: bronnen, ingestie, opslag (raw, curated, consumption), verwerking en levering, met orkestratie, governance en observability & kosten over alle lagen heen.",
+          "learnMore": "Meer over mij als Data Engineering"
+        },
+        "ai": {
+          "title": "AI engineering",
+          "subtitle": "Ik bouw AI-systemen voor productie met sterke focus op dataprivacy, traceerbaarheid, evaluatie en betrouwbaarheid. Ik bouw AI-systemen voor productie met sterke focus op dataprivacy, traceerbaarheid, evaluatie en betrouwbaarheid.",
+          "diagramAlt": "Architectuur van een AI-agentsysteem: een input-gateway met authenticatie en input-guardrails, een orchestrator-agent die taken plant en verdeelt over gespecialiseerde agents, een toollaag (functies en MCP), geheugen en kennis (vector store / RAG), output-guardrails met een mens in de lus en een kritische controlelus, en daaromheen observability en governance.",
+          "learnMore": "Meer over mij als AI Engineering"
+        }
+      },
+      "service1Title": "Data engineering",
+      "service2Title": "AI & GenAI",
+      "flow": {
+        "ai": {
+          "src1": "Documenten",
+          "src2": "Databases",
+          "src3": "FAQ & beleid",
+          "hubLabel": "retrieval · guardrails",
+          "hubTitle": "AI-assistent",
+          "out1Label": "met bronnen",
+          "out1Title": "Antwoord",
+          "out2Label": "automatisering",
+          "out2Title": "Actie in systeem"
+        }
+      },
+      "carousel": {
+        "slide": "{index} van {total}"
+      }
+    },
+    "experience": {
+      "eyebrow": "Ervaring",
+      "title": "Waar ik dit eerder deed",
+      "subtitle": "Werken met gevoelige data, complexe data en mensen zonder technische achtergrond. Drie plekken waar ik dit in de praktijk bracht.",
+      "photoAlt": "Ruud Juffermans presenteren.",
+      "items": [
+        {
+          "period": "2024",
+          "role": "Data Specialist - Cryptocurrency",
+          "org": "Politie Noord-Holland",
+          "body": "Data-analyse, automatisering en AI binnen het strafrecht — binnen harde eisen aan privacy en informatiebeveiliging, waar privacy by design het uitgangspunt is en geen bijlage."
+        },
+        {
+          "period": "2023",
+          "role": "Data Engineer",
+          "org": "Nederlands Lucht- en Ruimtevaartcentrum (NLR)",
+          "body": "Uiteenlopende dataprojecten gebouwd in een onderzoeksomgeving waar de cijfers worden nagerekend — en de pipelines erachter dat moeten kunnen dragen."
+        },
+        {
+          "period": "Sinds 2020",
+          "role": "Course Instructor",
+          "org": "Udemy",
+          "body": "Cursussen die complexe techniek uitleggen aan mensen zonder technische achtergrond: 241 cursisten met een 4.2-rating. Een dashboard dat niemand begrijpt is geen dashboard — en dat geldt ook voor een overdracht."
+        }
+      ],
+      "cta": "Meer over mij"
+    },
+    "principles": {
+      "eyebrow": "Hoe ik werk",
+      "title": "Wat je krijgt als ik bij het team kom",
+      "subtitle": "Vier gewoontes die in elk project op deze site terugkomen — en in de code erachter.",
+      "card1Title": "Eerst het fundament",
+      "card1Body": "De meeste AI- en rapportageprojecten stranden op de data, niet op het model. Ik begin bij de grain, de definities en de tests — en pas daarna bij wat erbovenop komt.",
+      "card2Title": "Gewend aan strenge kaders",
+      "card2Body": "Bij de politie en in de luchtvaart werk je binnen harde eisen aan privacy en informatiebeveiliging. Privacy by design is bij mij het startpunt, geen bijzaak.",
+      "card3Title": "Uitleggen ís het vak",
+      "card3Body": "Sinds 2020 leg ik op Udemy complexe techniek uit aan mensen zonder technische achtergrond: 241 cursisten met een 4.2-rating. Datzelfde doe ik met stakeholders en collega's.",
+      "card4Title": "Getest, gedocumenteerd, overdraagbaar",
+      "card4Body": "Tests, CI en documentatie horen bij elk project — kijk in de repo's. Het doel is werk waar een team zelf mee verder kan, niet werk dat van mij afhangt."
+    },
+    "underhood": {
+      "eyebrow": "Portfolio",
+      "viewProject": "Bekijk het project",
+      "github": "Bekijk op GitHub",
+      "projects": {
+        "digital-twin": {
+          "toggle": "AI Digital-twin",
+          "title": "Een AI die over mij spreekt — alleen als hij mij kan citeren",
+          "sub": "Een digital-twin voor deze site: een LangGraph-agent over mijn cv, projecten en artikelen die antwoorden met bron streamt, weigert zonder bron, onder een dagelijkse kostenlimiet blijft en op mijn goedkeuring wacht voordat hij namens mij handelt.",
+          "codeNote": "fail closed",
+          "f1Title": "Guards vóór tokens",
+          "f1Body": "Screening op prompt injection, PII en off-topic draait in gewone Python voordat er één token wordt uitgegeven — elke guard is fail closed, crasht nooit.",
+          "f2Title": "Mens in de lus",
+          "f2Body": "Een bericht namens mij opstellen is hoog risico: de graaf onderbreekt, zet het in de wachtrij voor mijn goedkeuring en meldt de bezoeker dat het op beoordeling wacht.",
+          "f3Title": "Evaluaties bewaken elke wijziging",
+          "f3Body": "Twee gelabelde datasets tegen de echte agent — toolselectie ≥ 95%, taakvoltooiing ≥ 90% — met failure injection om te bewijzen dat de retries standhouden."
+        },
+        "open-data-warehouse": {
+          "toggle": "Open data warehouse",
+          "title": "Een sterschema in de openbaarheid, op data die iedereen kan controleren",
+          "sub": "End-to-end ELT-platform op Nederlandse open data: Python-ingestie, dbt-transformaties en een gedocumenteerd Kimball-sterschema — met tests en CI op elke pull request, gebouwd zoals een platformteam het oplevert.",
+          "codeNote": "getest op elke PR",
+          "f1Title": "Expliciete grain",
+          "f1Body": "Twee feitentabellen met verschillende grains in één schema, elk vastgelegd in één zin — want precies daar gaat modelleren mis.",
+          "f2Title": "Tests en CI",
+          "f2Body": "dbt-tests en -docs draaien op elke pull request; een kapot model haalt main nooit.",
+          "f3Title": "Warehouse-onafhankelijk",
+          "f3Body": "DuckDB in CI, Snowflake of Databricks met een profielwissel — het modelleren is het punt, niet de engine."
+        },
+        "ov-streaming-pipeline": {
+          "toggle": "OV streaming pipeline",
+          "title": "Realtime vertragingen in het Nederlandse OV",
+          "sub": "Streamingpipeline op de landelijke OV-feed: voertuigposities stromen door Kafka, vertragingen worden berekend in vensters van vijf minuten, en een live kaart laat zien waar het netwerk nú uitloopt.",
+          "codeNote": "streams, geen batches",
+          "f1Title": "Kafka van begin tot eind",
+          "f1Body": "GTFS-realtime posities via Redpanda, met een dead-letter queue voor events die niet parsen.",
+          "f2Title": "Aggregaties per venster",
+          "f2Body": "Vertraging per lijn en station in vensters van vijf minuten — ook correct bij late en dubbele events.",
+          "f3Title": "Live dashboard",
+          "f3Body": "Een Streamlit-kaart met actuele vertragingen, rechtstreeks uit de stream."
+        },
+        "strafrecht-rag": {
+          "toggle": "Strafrecht AI RAG",
+          "title": "Vragen stellen aan rechtspraak — mét bronnen",
+          "sub": "RAG-systeem over rechterlijke uitspraken: semantisch zoeken door uitspraken, antwoorden geformuleerd door een LLM, en elke bewering herleidbaar naar de ECLI waar ze vandaan komt.",
+          "codeNote": "geen bron, geen antwoord",
+          "f1Title": "Bronvermelding standaard",
+          "f1Body": "Elk antwoord draagt zijn ECLI-verwijzingen — van bewering terug naar de onderliggende passage.",
+          "f2Title": "Eerlijk weigeren",
+          "f2Body": "Geen relevante passage gevonden betekent geen antwoord. Het systeem verzint geen jurisprudentie.",
+          "f3Title": "Geëvalueerde retrieval",
+          "f3Body": "Retrievalkwaliteit gemeten tegen een testset met LangFuse-tracing — geen demo die één keer goed ging."
+        }
+      }
+    },
+    "blog": {
+      "eyebrow": "Blog",
+      "title": "Laatste artikelen",
+      "all": "Alle artikelen"
+    },
+    "cta": {
+      "title": "Op zoek naar een data engineer of AI-specialist?",
+      "subtitle": "Ik sta open voor een nieuwe rol in data engineering en AI. Stuur me een bericht, of connect op LinkedIn.",
+      "primary": "Neem contact op",
+      "secondary": "Connect op LinkedIn"
+    }
+  },
+  "about": {
+    "metaTitle": "Over mij — data engineer met een achtergrond bij NLR en de Politie",
+    "metaDescription": "Data engineer en AI-bouwer, met 241 Udemy-cursisten en een 4.2-rating. Ontwierp en bouwde een dataplatform bij het Nederlands Lucht- en Ruimtevaartcentrum en zette datagedreven werken op bij de Politie Noord-Holland. Open voor een nieuwe rol.",
+    "eyebrow": "Over mij",
+    "name": "Ruud Juffermans",
+    "portraitAlt": "Portret van Ruud Juffermans",
+    "intro1": "Bij de Politie Eenheid Noord-Holland zette ik datagedreven werken op in een team waar dat nog niet bestond. Ik bracht de databronnen in kaart, bouwde pipelines in Python en SQL, ontwierp de datamodellen en leverde rapportages op waar rechercheurs en leidinggevenden direct mee sturen. Dat gebeurt onder strikte eisen aan privacy en informatiebeveiliging, met data waarbij een verkeerde conclusie echte gevolgen heeft.",
+    "intro2": "Daarvoor werkte ik als data engineer bij het Nederlands Lucht- en Ruimtevaartcentrum aan COMPASS, een EU-project rond digitale productpaspoorten. Ik leidde de requirements engineering met partners uit heel Europa, maakte de architectuurkeuzes voor het dataplatform en bouwde de MVP in een internationaal Agile-team. Mijn opleiding Business Data Management legde daar de basis voor: datamodellering, datawarehousing en BI.",
+    "intro3": "Naast mijn werk maakte ik vier jaar lang cursussen op Udemy over Python, SQL en full-stack development. Complexe techniek uitleggen aan mensen zonder technische achtergrond is daar het hele vak — en het is ook wat een data engineer in een team het grootste deel van de dag doet. Dezelfde nieuwsgierigheid bracht me bij AI: RAG, agents en retrieval-evaluatie, uitgewerkt in de projecten op deze site. Ik zoek nu een team waar ik dat datafundament en die AI-laag samen kan bouwen.",
+    "pullQuote": "Ik heb gezien wat er gebeurt als data en AI wél werken — en wat er gebeurt als het fundament ontbreekt.",
+    "expertiseTitle": "Expertise",
+    "skills": {
+      "data": "Data engineering",
+      "ai": "AI & GenAI",
+      "engineering": "Engineering"
+    },
+    "experienceEyebrow": "Ervaring",
+    "experienceTitle": "Rollen, en wat ik daar deed",
+    "experience": [
+      {
+        "period": "2025 – nu",
+        "role": "Data Specialist - Cryptocurrency",
+        "org": "Politie Eenheid Noord-Holland",
+        "bullets": [
+          "Datagedreven werken vanaf nul opgezet: databronnen geïnventariseerd, kwaliteit beoordeeld en de behoeften van operatie, tactiek en management vertaald naar een concreet plan.",
+          "ETL-pipelines in Python en SQL, dimensionele datamodellen en Power BI-rapportages gebouwd voor operationele en strategische besluitvorming.",
+          "Geautomatiseerde tooling ontwikkeld die handmatig analysewerk vervangt, onder meer voor financiële en cryptovaluta-onderzoeken.",
+          "Governance ingericht — datakwaliteit, classificatie, documentatie — en trainingen gegeven om de datageletterdheid in het team te vergroten."
+        ]
+      },
+      {
+        "period": "2024 – 2025",
+        "role": "Data Engineer",
+        "org": "Nederlands Lucht- en Ruimtevaartcentrum (NLR)",
+        "bullets": [
+          "Requirements engineering geleid voor COMPASS, een EU-gefinancierd project rond digitale productpaspoorten: interviews met Europese partners vertaald naar specificaties.",
+          "Architectuur van het dataplatform ontworpen — integraties, datamodellen, datastructuren — en de MVP gebouwd en iteratief opgeleverd in een internationaal Agile-team.",
+          "Datatransformaties gebouwd met dbt en Power BI-dashboards ontwikkeld voor projectstakeholders."
+        ]
+      },
+      {
+        "period": "2020 – 2024",
+        "role": "Cursusmaker",
+        "org": "Udemy",
+        "bullets": [
+          "Cursussen ontwikkeld over Python, SQL, full-stack development en blockchaintechnologie: 241 cursisten met een 4.2-rating.",
+          "Zelfstandig een onderwijsproduct opgebouwd: van doelgroepanalyse tot iteratief verbeteren op basis van feedback van cursisten."
+        ]
+      }
+    ],
+    "timelineEyebrow": "Mijn pad",
+    "timelineTitle": "Van boekhouding naar data",
+    "timeline": [
+      {
+        "year": "2017",
+        "label": "Mbo Bedrijfsadministratie afgerond aan het ROC van Amsterdam"
+      },
+      {
+        "year": "2019",
+        "label": "Start Computer Science — Business Data Management, Hogeschool Leiden"
+      },
+      {
+        "year": "2020",
+        "label": "Eerste Udemy-cursussen gepubliceerd"
+      },
+      {
+        "year": "2023",
+        "label": "Afgestudeerd, met een minor Blockchain & Cryptocurrency Business, Law & IT"
+      },
+      {
+        "year": "2024",
+        "label": "Data Engineer bij het Nederlands Lucht- en Ruimtevaartcentrum"
+      },
+      {
+        "year": "2025",
+        "label": "Data Specialist - Cryptocurrency bij Politie Eenheid Noord-Holland"
+      }
+    ],
+    "cta": {
+      "title": "Denk je dat ik in jullie team pas?",
+      "subtitle": "Ik sta open voor een nieuwe rol. Neem contact op, of begin bij de projecten om te zien hoe ik werk.",
+      "primary": "Neem contact op",
+      "secondary": "Bekijk de projecten"
+    }
+  },
+  "expertise": {
+    "allProjects": "Alle projecten",
+    "view": "Bekijk project",
+    "repo": "Code op GitHub",
+    "approachEyebrow": "Aanpak",
+    "experienceEyebrow": "Ervaring",
+    "skillsEyebrow": "Werkt met",
+    "principlesEyebrow": "Uitgangspunten",
+    "relatedEyebrow": "Projecten",
+    "cta": {
+      "subtitle": "Ik zoek een team waar ik dit werk goed kan doen. Een gesprek is zo gepland.",
+      "primary": "Neem contact op",
+      "secondary": "Meer over mij"
+    },
+    "fields": {
+      "data": {
+        "metaTitle": "Data engineering — warehouses, pipelines en streaming",
+        "metaDescription": "Hoe ik data engineering aanpak: gemodelleerde warehouses, geteste pipelines en streaming — met de ervaring bij NLR en de Politie en de projecten die het laten zien.",
+        "eyebrow": "Data engineering",
+        "title": "Van losse bronnen naar één warehouse dat klopt",
+        "intro": "Ik breng bronnen samen in een gemodelleerd, getest data warehouse: pipelines die elke dag draaien, cijfers die voor elke afdeling hetzelfde zijn, en rapportage die niemand meer met de hand in elkaar hoeft te zetten.",
+        "intro2": "Dat werk deed ik als data engineer bij het Nederlands Lucht- en Ruimtevaartcentrum en als data-analist bij de Politie Noord-Holland — twee omgevingen waar een verkeerd cijfer echte gevolgen heeft. De projecten op deze site laten dezelfde aanpak zien, met de code in de openbaarheid.",
+        "approachTitle": "Wat een team van mij kan verwachten",
+        "approach": [
+          {
+            "title": "Modelleren vóór bouwen",
+            "body": "Eerst de grain en de dimensies op papier, dan pas SQL. Een sterschema dat gedocumenteerd is, blijft ook begrijpelijk als ik er niet meer naast zit."
+          },
+          {
+            "title": "Tests op elke wijziging",
+            "body": "Not-null, uniciteit en relaties als tests in de pipeline, en CI die ze op elke pull request draait. Een fout valt op vóór hij in een dashboard staat."
+          },
+          {
+            "title": "Batch én streaming",
+            "body": "Dagelijkse ELT waar dat volstaat, Kafka en vensters waar cijfers binnen minuten moeten kloppen — inclusief dead-letter queue en replay voor het foutpad."
+          },
+          {
+            "title": "Uitlegbaar voor de afdeling",
+            "body": "Een warehouse is pas af als de mensen die ermee werken het snappen. Documentatie en overdracht horen bij het werk, niet erna."
+          }
+        ],
+        "experienceTitle": "Waar ik dit deed",
+        "experience": [
+          {
+            "period": "2024",
+            "role": "Data Specialist - Cryptocurrency",
+            "org": "Politie Noord-Holland",
+            "body": "Data-analyse en automatisering binnen het strafrecht, onder harde eisen aan privacy en informatiebeveiliging. Pipelines waarin privacy by design het uitgangspunt is, niet een bijlage."
+          },
+          {
+            "period": "2023",
+            "role": "Data Engineer",
+            "org": "Nederlands Lucht- en Ruimtevaartcentrum (NLR)",
+            "body": "Uiteenlopende dataprojecten in een onderzoeksomgeving waar de cijfers worden nagerekend — en waar de pipelines erachter dat moeten kunnen dragen."
+          },
+          {
+            "period": "Sinds 2020",
+            "role": "Docent",
+            "org": "Udemy",
+            "body": "Cursussen over data en techniek voor mensen zonder technische achtergrond: 241 cursisten met een 4.2-rating. Dezelfde vaardigheid die een team nodig heeft bij elke overdracht."
+          }
+        ],
+        "skills": [
+          "Datamodellering",
+          "Kimball / sterschema",
+          "dbt",
+          "SQL",
+          "Python",
+          "ELT-pipelines",
+          "Kafka",
+          "Streaming",
+          "PostgreSQL",
+          "DuckDB",
+          "Docker",
+          "CI/CD",
+          "Azure",
+          "Power BI"
+        ],
+        "principles": [
+          "Eén definitie per cijfer, voor elke afdeling dezelfde.",
+          "Fouten vallen op in de pipeline, niet in het dashboard.",
+          "Alles reproduceerbaar: vanaf nul met één commando."
+        ],
+        "relatedTitle": "Projecten die dit laten zien",
+        "relatedSubtitle": "Twee eigen projecten, van ruwe bron tot werkend resultaat — met de volledige aanpak en de code open en bloot.",
+        "ctaTitle": "Een warehouse dat klopt, voor jouw team?"
+      },
+      "ai": {
+        "metaTitle": "AI engineering — assistenten met bronnen, guardrails en evaluatie",
+        "metaDescription": "Hoe ik AI engineering aanpak: RAG en agents die antwoorden met bronvermelding, eerlijk weigeren en alleen handelen met goedkeuring — met de ervaring bij de Politie en de projecten die het laten zien.",
+        "eyebrow": "AI engineering",
+        "title": "AI die antwoordt met bronnen, en weet wanneer te zwijgen",
+        "intro": "Ik bouw AI-systemen voor productie: assistenten die antwoorden met bronvermelding, eerlijk zeggen wat ze niet weten, en alleen handelen waar een mens dat heeft goedgekeurd — met evaluatie die elke wijziging bewaakt.",
+        "intro2": "Bij de Politie Noord-Holland paste ik AI toe binnen het strafrecht, een omgeving waar privacy en informatiebeveiliging geen bijzaak zijn. De meeste AI-projecten stranden niet op het model maar op de data; daarom bouw ik eerst het fundament en daarna pas de assistent.",
+        "approachTitle": "Wat een team van mij kan verwachten",
+        "approach": [
+          {
+            "title": "Bronnen bij elke bewering",
+            "body": "Een antwoord zonder gevonden passage is geen antwoord. Elke claim verwijst naar het document of de uitspraak waar hij vandaan komt."
+          },
+          {
+            "title": "Guardrails vóór het model",
+            "body": "Prompt-injectie, PII en off-topic vragen worden in gewone code afgevangen voordat er één token wordt uitgegeven. Fail closed, nooit crashen."
+          },
+          {
+            "title": "Mens in de lus",
+            "body": "Acties met gevolgen — een bericht sturen, iets wijzigen — wachten op goedkeuring. Een harde kostenlimiet per dag houdt de rekening voorspelbaar."
+          },
+          {
+            "title": "Evaluatie op elke wijziging",
+            "body": "Gelabelde datasets en drempels in CI: recall van de retrieval, juiste toolselectie, taakvoltooiing. Een regressie blokkeert de merge."
+          }
+        ],
+        "experienceTitle": "Waar ik dit deed",
+        "experience": [
+          {
+            "period": "2024",
+            "role": "Data Specialist - Cryptocurrency",
+            "org": "Politie Noord-Holland",
+            "body": "AI en automatisering toegepast binnen het strafrecht — waar vertrouwelijke en privacygevoelige data de norm is en elke uitkomst herleidbaar moet zijn."
+          },
+          {
+            "period": "2023",
+            "role": "Data Engineer",
+            "org": "Nederlands Lucht- en Ruimtevaartcentrum (NLR)",
+            "body": "Het datafundament gebouwd waar AI-toepassingen op moeten staan: schone, gemodelleerde en geteste data in een onderzoeksomgeving."
+          },
+          {
+            "period": "Sinds 2020",
+            "role": "Docent",
+            "org": "Udemy",
+            "body": "Complexe techniek uitleggen aan mensen zonder technische achtergrond, 241 cursisten met een 4.2-rating — ook wat AI wél en níet kan."
+          }
+        ],
+        "skills": [
+          "LLM's",
+          "RAG",
+          "AI-agents",
+          "LangGraph",
+          "LangChain",
+          "Retrieval-evaluatie",
+          "Guardrails",
+          "pgvector",
+          "LangFuse",
+          "Python",
+          "FastAPI",
+          "Documentverwerking",
+          "Streaming (SSE)"
+        ],
+        "principles": [
+          "Geen bron, geen antwoord.",
+          "Guards in code, niet in de prompt.",
+          "Risicovolle acties alleen met menselijke goedkeuring."
+        ],
+        "relatedTitle": "Projecten die dit laten zien",
+        "relatedSubtitle": "Twee eigen AI-systemen die in productie draaien — met guardrails, evaluatie en de code open en bloot.",
+        "ctaTitle": "AI die je aan een klant durft te laten zien?"
+      }
+    }
+  },
+  "contact": {
+    "metaTitle": "Contact — Ruud Juffermans",
+    "metaDescription": "Neem contact op met Ruud Juffermans over een rol in data engineering of AI, of om over een project van gedachten te wisselen.",
+    "eyebrow": "Contact",
+    "title": "Laten we praten",
+    "subtitle": "Zoek je iemand voor een data- of AI-rol, of wil je sparren over een van de projecten? Laat een bericht achter of neem direct contact op.",
+    "form": {
+      "name": "Naam",
+      "email": "E-mail",
+      "company": "Bedrijf of organisatie (optioneel)",
+      "message": "Bericht",
+      "messagePlaceholder": "Vertel me over de rol, het team, of waar jullie aan bouwen...",
+      "submit": "Verstuur bericht",
+      "submitting": "Verzenden...",
+      "genericError": "Er ging iets mis"
+    },
+    "success": {
+      "title": "Bericht verzonden",
+      "body": "Bedankt voor je bericht! Ik neem zo snel mogelijk contact met je op, meestal binnen 24 uur."
+    },
+    "direct": {
+      "title": "Direct contact",
+      "email": "me@ruudjuffermans.nl",
+      "linkedin": "LinkedIn",
+      "github": "GitHub",
+      "location": "Amsterdam, Nederland",
+      "remote": "Gevestigd in Amsterdam. Open voor hybride en remote rollen in heel Nederland."
+    }
+  },
+  "blog": {
+    "metaTitle": "Blog — Data engineering & AI",
+    "metaDescription": "Artikelen over datamodellering, pipelines, CI voor dbt, streaming op Kafka en RAG-systemen — geschreven vanuit de projecten op deze site.",
+    "eyebrow": "Blog",
+    "title": "Artikelen over data en AI",
+    "subtitle": "Over wat er echt voor nodig is om een datafundament te bouwen dat houdt — geschreven vanuit de projecten op deze site.",
+    "empty": {
+      "title": "Eerste artikelen komen eraan",
+      "body": "Ik werk aan diepgaande artikelen over data engineering en AI. Schrijf je in voor de nieuwsbrief om niets te missen."
+    },
+    "post": {
+      "ctaTitle": "Herken je je in deze manier van denken?",
+      "ctaBody": "Ik sta open voor een nieuwe rol in data engineering en AI. Laten we praten.",
+      "ctaButton": "Neem contact op",
+      "fallbackNotice": "Dit artikel is nog niet vertaald naar het Nederlands. Je leest de Engelse versie."
+    },
+    "filters": {
+      "topicLabel": "Onderwerp",
+      "projectLabel": "Project",
+      "all": "Alles",
+      "standalone": "Losstaand",
+      "topics": {
+        "ai": "AI",
+        "data-engineering": "Data engineering"
+      },
+      "projects": {
+        "digital-twin": "AI Digital-twin",
+        "open-data-warehouse": "Open-data warehouse",
+        "ov-streaming-pipeline": "OV streaming pipeline",
+        "strafrecht-rag": "Strafrecht-RAG"
+      },
+      "reset": "Toon alles",
+      "empty": {
+        "title": "Geen artikelen voor dit filter",
+        "body": "Kies een ander onderwerp of project, of toon alle artikelen."
+      },
+      "countOne": "1 artikel",
+      "countOther": "{count} artikelen"
+    }
+  },
+  "projects": {
+    "metaTitle": "Projecten — Data & AI in de praktijk",
+    "metaDescription": "Eigen projecten waarin ik de complete keten bouw: van ruwe bron tot dashboard en werkende AI-toepassing, met de code in de openbaarheid.",
+    "eyebrow": "Projecten",
+    "title": "Wat ik bouw, en hoe",
+    "subtitle": "Eigen projecten waarin ik de complete keten bouw — van ruwe bron tot werkend dashboard of AI-toepassing, met de volledige aanpak en de code open en bloot, zodat je kunt zien hoe ik werk.",
+    "view": "Bekijk project",
+    "repoLabel": "Bekijk de code op GitHub",
+    "empty": {
+      "title": "Projecten in opbouw",
+      "body": "Ik werk aan uitgewerkte projecten. Kom binnenkort terug, of neem alvast contact op."
+    },
+    "detail": {
+      "fallbackNotice": "Dit project is nog niet vertaald naar het Nederlands. Je leest de Engelse versie."
+    }
+  },
+  "privacy": {
+    "metaTitle": "Privacyverklaring",
+    "metaDescription": "Privacyverklaring van ruudjuffermans.nl, de portfoliosite van Ruud Juffermans.",
+    "title": "Privacyverklaring",
+    "lastUpdated": "Laatste update: september 2026",
+    "sections": [
+      {
+        "title": "1. Wie ben ik",
+        "content": "Ruud Juffermans, data engineer, gevestigd in Noord-Holland, Nederland. Dit is mijn persoonlijke portfoliosite. E-mail: ruudjuffermans@pm.me."
+      },
+      {
+        "title": "2. Welke gegevens verzamel ik",
+        "content": "Via het contactformulier: naam, e-mailadres, eventueel bedrijfsnaam en uw bericht. Via de nieuwsbrief: e-mailadres. Ik gebruik privacy-vriendelijke analytics (geen cookies, geen persoonsgegevens)."
+      },
+      {
+        "title": "3. Waarom verzamel ik deze gegevens",
+        "content": "Om uw bericht te beantwoorden en contact met u op te nemen. Om de nieuwsbrief te versturen waarvoor u zich heeft aangemeld. Om de website te verbeteren op basis van geanonimiseerde gebruiksstatistieken."
+      },
+      {
+        "title": "4. Hoe lang bewaar ik gegevens",
+        "content": "Contactformulier-gegevens worden bewaard zolang nodig voor de afhandeling van uw bericht, met een maximum van 12 maanden. Nieuwsbrief-gegevens worden bewaard totdat u zich uitschrijft."
+      },
+      {
+        "title": "5. Delen met derden",
+        "content": "Ik deel uw gegevens niet met derden, behalve waar nodig om de site te laten draaien: Proton (e-mailverzending) en Buttondown (nieuwsbrief). Deze verwerkers handelen onder verwerkersovereenkomsten."
+      },
+      {
+        "title": "6. Uw rechten",
+        "content": "U heeft recht op inzage, correctie, verwijdering en overdraagbaarheid van uw gegevens. Ook kunt u bezwaar maken tegen de verwerking. Neem hiervoor contact op via ruudjuffermans@pm.me. U kunt ook een klacht indienen bij de Autoriteit Persoonsgegevens."
+      },
+      {
+        "title": "7. Cookies",
+        "content": "Deze website maakt geen gebruik van tracking cookies. Er is geen cookie-banner nodig."
+      },
+      {
+        "title": "8. Wijzigingen",
+        "content": "Deze privacyverklaring kan worden aangepast. De laatste versie is altijd beschikbaar op deze pagina."
+      }
+    ]
+  },
+  "footer": {
+    "tagline": "Data engineering & AI",
+    "portraitAlt": "Portret van Ruud Juffermans",
+    "siteHeading": "Site",
+    "elsewhereHeading": "Elders",
+    "newsletterHeading": "Nieuwsbrief",
+    "newsletterBody": "Af en toe een artikel over data engineering en AI, geschreven vanuit de projecten — nooit vaker dan eens per maand.",
+    "newsletterLabel": "E-mailadres",
+    "newsletterPlaceholder": "jouw@email.nl",
+    "newsletterSubmit": "Inschrijven",
+    "newsletterSuccess": "Ingeschreven!",
+    "newsletterError": "Er ging iets mis. Probeer het opnieuw.",
+    "siteLinks": {
+      "projects": "Projecten",
+      "blog": "Blog",
+      "about": "Over mij",
+      "contact": "Contact",
+      "privacy": "Privacy"
+    },
+    "elsewhereLinks": {
+      "linkedin": "LinkedIn",
+      "github": "GitHub",
+      "email": "E-mail"
+    },
+    "copyright": "© {year} Ruud Juffermans"
+  },
+  "notFound": {
+    "title": "Pagina niet gevonden",
+    "description": "De pagina die je zoekt bestaat niet (meer). Misschien is het adres veranderd, of zit er een typefout in de link.",
+    "backHome": "Terug naar home"
+  },
+  "diagram": {
+    "zoomIn": "Inzoomen",
+    "zoomOut": "Uitzoomen",
+    "reset": "Terug naar volledig beeld",
+    "expand": "Schermvullend",
+    "collapse": "Sluiten"
+  }
+}

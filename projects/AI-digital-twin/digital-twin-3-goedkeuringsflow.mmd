@@ -1,0 +1,32 @@
+sequenceDiagram
+    autonumber
+    actor B as Bezoeker
+    participant C as Browser
+    participant A as FastAPI
+    participant G as Agent (graph)
+    participant M as Model
+    participant P as Postgres
+    actor R as Ruud
+
+    B->>C: "Kun je dit doorgeven aan Ruud?"
+    C->>A: POST /api/chat (thread_id)
+    A->>G: astream(turns, thread_id)
+    G->>G: guard_input — geen guard afgegaan
+    G->>M: generate
+    M-->>G: tool call draft_contact_message
+    Note over G: hoog-risico tool:<br/>nooit zonder goedkeuring
+    G->>G: request_approval — interrupt()
+    G->>P: checkpoint van de thread
+    A->>P: zet in pending_approvals
+    A-->>C: SSE: "voorgelegd ter goedkeuring" + approval pending + done
+    C-->>B: melding in de chat
+
+    Note over A,R: later — de thread blijft gepauzeerd staan
+
+    R->>A: POST /api/admin/approvals/{thread}/decision<br/>(bearer token)
+    A->>G: Command(resume = {approved: true})
+    G->>P: laad checkpoint
+    G->>G: execute_tools — nu wél uitgevoerd
+    G->>M: generate maakt het antwoord af
+    G->>P: contact_messages + turn_log
+    A-->>R: 200 — besluit verwerkt

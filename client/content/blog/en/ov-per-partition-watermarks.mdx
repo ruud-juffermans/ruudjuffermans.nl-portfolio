@@ -1,0 +1,263 @@
+---
+title: "The bug that made 169,000 good events \"late\""
+date: "2026-09-13"
+excerpt: "One watermark for the whole stream is the obvious design and it is wrong. During a 40-minute catch-up my streaming pipeline dropped 169,000 perfectly good events because six Kafka partitions were read at six different speeds. This is the fix, the tests that pin it, and the second bug that hid behind it."
+tags: ["Engineering", "Kafka", "Streaming"]
+topic: "data-engineering"
+project: "ov-streaming-pipeline"
+---
+In the earlier post about the pipeline I described late events as *policy,
+not surprise*: a window waits a fixed tolerance for stragglers, and whatever
+arrives after that is counted and dropped. That sentence was true. What I
+didn't say is that the first version of the code applied that policy to
+169,000 events that were not late at all.
+
+This post is about that one bug: what it looked like, why the design that
+caused it feels correct, what the fix looks like in code, and the smaller
+bug that was waiting behind it.
+
+## The symptom
+
+The processor keeps a Grafana panel for late events. In steady state it sits
+at zero, and it should: event time in this pipeline is the feed's own
+generation time, which only moves forward. So when the panel is not zero,
+something is wrong with *my* code, not with the data.
+
+After a restart, the consumer has to catch up. Normally that is
+uneventful: lag peaks at a few thousand messages and drains within a minute.
+But the first time I let the processor fall properly behind, the catch-up
+took about 40 minutes, and during those 40 minutes the late-event counter
+climbed to 169,000. None of those events were malformed or out of order on
+their own trip. Every one belonged to a window that was then written to
+Postgres with fewer observations than it should have had, and because a
+finalized window is never re-emitted, those rows stayed wrong until a
+replay.
+
+## Why "global max" feels right
+
+The original watermark logic was four lines at the end of `add()`:
+
+```python
+        self.stats.accepted += 1
+        if self._max_event_time is None or event_time > self._max_event_time:
+            self._max_event_time = event_time
+            self._raise_watermark(event_time - timedelta(seconds=self.allowed_lateness_s))
+        return True
+```
+
+Watermark = the newest event time I have seen, minus the allowed lateness
+(120 s). A window is finalized as soon as the watermark passes its end. This
+is the textbook definition, and it is correct **for a single, ordered
+stream**.
+
+The problem is that a Kafka topic is not one stream. `arrival_predictions`
+has six partitions, keyed by `trip_id`, so every partition carries a
+different, fixed set of trips. The consumer polls all six in batches of up to
+2,000 messages, and the broker hands them over in whatever mix it likes.
+While the pipeline is keeping up, that mix is harmless: all six partitions
+are within a minute of each other, and the global max is within a minute of
+each partition's max.
+
+During a catch-up, the mix is anything but harmless. One partition gets
+drained ahead, another gets starved. Say partition 0 is 15 minutes ahead of
+partition 5. The global watermark follows partition 0 and closes windows 15
+minutes ahead of where partition 5 is; then every message from partition 5
+for those windows arrives, is compared against a watermark it has no
+relation to, and is declared late. The events were in perfect order *on
+their own partition*. The watermark simply was not looking at it.
+
+![A global maximum runs ahead of the slowest partition and closes windows those partitions are still filling; a minimum waits for them](/images/blog/ov-per-partition-watermarks/ov-per-partition-watermarks-1-six-partitions.svg "A global maximum runs ahead of the slowest partition and closes windows those partitions are still filling; a minimum waits for them.")
+
+That is the wrong mental model in one sentence: **"the newest event I have
+seen" is not "the point before which nothing more will arrive"**. The second
+is what a watermark means. The first only equals it when there is one
+source.
+
+## The fix: one watermark per source
+
+This is not a new problem; it is exactly why Flink generates watermarks per
+Kafka partition and takes the minimum. The engine now tracks, per source,
+the maximum event time it has seen and when it last heard from that source:
+
+```python
+    def _observe_source(self, source: Hashable, event_time: datetime) -> None:
+        now = self.clock()
+        previous = self._sources.get(source)
+        self._sources[source] = (
+            event_time if previous is None or event_time > previous[0] else previous[0],
+            now,
+        )
+        self._recompute_watermark(now)
+
+    def _recompute_watermark(self, now: float) -> None:
+        active = [t for t, seen in self._sources.values() if now - seen <= self.idle_source_s]
+        if active:
+            self._raise_watermark(min(active) - timedelta(seconds=self.allowed_lateness_s))
+
+    def _raise_watermark(self, candidate: datetime) -> None:
+        if self.watermark is None or candidate > self.watermark:
+            self.watermark = candidate
+```
+
+The consumer passes `source=(topic, msg.partition())` on every message, so a
+"source" is a Kafka partition. The watermark is now the **minimum** over
+sources of each source's own maximum, minus the lateness. The slowest
+partition decides when a window closes, which is the only partition that
+can still deliver something for it.
+
+The minimum on its own would have introduced a new failure. The overnight
+lull in this feed is real: between 01:00 and 05:00 there are 20 to 30 night
+buses in the whole country and throughput drops to 2 messages per second.
+With trips spread over six partitions, a partition can easily go silent for
+minutes. A pure minimum would then freeze the watermark at that partition's
+last event, and no window anywhere would close until a night bus happened
+to land on it. That is what `idle_source_s` (120 s by default) is for: a
+source that has said nothing for that long is excluded from the minimum
+until it speaks again. Flink calls this the idleness timeout. The trade is
+explicit: a partition that goes quiet and then comes back *behind* the
+others will have its stale events counted as late, and that is a better
+outcome than stalling every window in the pipeline for one quiet partition.
+
+There is one more gap. If *all* sources go quiet, no event arrives, and no
+event means the watermark never moves, which means the last window of the
+night never closes. The engine cannot fix that on its own because it only
+knows event time. So the consumer loop watches the wall clock:
+
+```python
+        idle = now_mono - self._last_event_at
+        if idle >= self.idle_finalize_s:
+            self.pipeline.finalize(now=datetime.now(tz=UTC), idle_s=idle)
+        else:
+            self.pipeline.finalize()
+```
+
+After 90 s without any event, the pipeline calls `advance_to(now)`:
+
+```python
+    def advance_to(self, now: datetime) -> None:
+        """Idle-time watermark: pretend an event at ``now`` arrived, without adding data."""
+        self._raise_watermark(now - timedelta(seconds=self.allowed_lateness_s))
+```
+
+This mixes wall-clock time into an event-time watermark, which is normally a
+sin. It is safe here for a measured reason: in steady state the watermark
+lags wall clock by about 170 s, of which 120 s is the allowed lateness and
+roughly 50 s the feed's cadence. Event time and wall clock are close enough
+that "pretend an event arrived now" cannot close a window the feed might
+still fill.
+
+![Three mechanisms in sequence: the minimum follows the slowest partition, the idle timeout drops a silent one, and the wall clock finishes the last window](/images/blog/ov-per-partition-watermarks/ov-per-partition-watermarks-2-quiet-night.svg "Three mechanisms in sequence: the minimum follows the slowest partition, the idle timeout drops a silent one, and the wall clock finishes the last window.")
+
+## The tests that pin it
+
+The engine is pure Python with no Kafka imports and an injectable clock, so
+all three behaviours are unit tests with synthetic sequences. The first one
+is honest about a limitation as well: the watermark never moves backwards,
+so the minimum only protects a partition once it has been seen at least
+once.
+
+```python
+def test_watermark_follows_the_slowest_active_partition():
+    w = TumblingWindower(300, allowed_lateness_s=0, clock=FakeClock())
+    w.add(at(1000), "line", "L1", 1, source=("p", 0))  # partition 0 is far ahead
+    assert w.watermark == at(1000)
+    w.add(at(100), "line", "L1", 1, source=("p", 1))  # partition 1 lags: window [0,300) still open
+    assert w.watermark == at(1000)  # never moves backwards ...
+    w2 = TumblingWindower(300, allowed_lateness_s=0, clock=FakeClock())
+    w2.add(at(100), "line", "L1", 1, source=("p", 1))
+    w2.add(at(1000), "line", "L1", 1, source=("p", 0))
+    assert w2.watermark == at(100)  # ... but with both sources known, the minimum rules
+    assert w2.add(at(50), "line", "L1", 1, source=("p", 1)) is True  # not late on the slow one
+    assert w2.stats.late == 0
+```
+
+The second test is the idleness timeout, including the trade-off at the end:
+the partition that comes back late gets its event counted as late.
+
+```python
+def test_idle_partition_stops_holding_the_watermark_back():
+    clock = FakeClock()
+    w = TumblingWindower(300, allowed_lateness_s=0, idle_source_s=60, clock=clock)
+    w.add(at(100), "line", "L1", 1, source=("p", 1))
+    w.add(at(1000), "line", "L1", 1, source=("p", 0))
+    assert w.watermark == at(100) and w.active_sources() == 2
+    clock.t = 61  # partition 1 said nothing for over a minute
+    w.add(at(1001), "line", "L1", 1, source=("p", 0))
+    assert w.watermark == at(1001) and w.active_sources() == 1
+    clock.t = 62
+    w.add(at(400), "line", "L1", 1, source=("p", 1))  # it speaks again, behind: counted late
+    assert w.stats.late == 1
+```
+
+And the third is the overnight case: one event, nothing else ever arrives,
+and the window still has to close, but not a second before the lateness has
+actually elapsed.
+
+```python
+def test_idle_advance_closes_the_last_window():
+    w = TumblingWindower(300, 120)
+    w.add(at(100), "line", "L1", 5)
+    assert w.pop_finalized() == []
+    w.advance_to(at(419))
+    assert w.pop_finalized() == []  # 419 - 120 = 299 < 300
+    w.advance_to(at(420))
+    assert len(w.pop_finalized()) == 1
+```
+
+None of these need a broker. That was the point of keeping the engine free
+of Kafka: the catch-up bug reproduces in a test that runs in milliseconds.
+
+## The second bug: a seed from the future
+
+Per-partition watermarks removed the 169,000. The next entry in the README's
+numbers table reads: late events dropped, 0 since the last restart; 130,000
+earlier in the hour from one restart. Different bug, same counter.
+
+On start-up the processor seeds its watermark from Postgres, from the newest
+`window_end` already written. The reason is redelivery safety: after a
+crash, messages for windows that are already in the database come back, and
+they must be treated as late instead of recomputed into a partial window that
+overwrites a complete row. That logic is right. What I had not considered is
+*who else* writes windows to that table.
+
+A replay was running at the time of the restart. The replay pushes archived
+messages through the same `Pipeline` class, and it had written a window whose
+end lay ahead of the wall clock. The processor started, read that window end,
+seeded its watermark from it, and from that moment every live event belonged
+to a window that was "already closed". 130,000 events later the wall clock
+caught up with the seed and the counter stopped.
+
+![A replayed window can end after now; the clamp keeps the seed behind the wall clock so live events are not born late](/images/blog/ov-per-partition-watermarks/ov-per-partition-watermarks-3-seed-from-the-future.svg "A replayed window can end after now; the clamp keeps the seed behind the wall clock so live events are not born late.")
+
+The fix is a single `min()` in `main.py`:
+
+```python
+    newest = sink.newest_window_end()
+    if newest is not None:
+        # Clamp: a window written by a replay could end after "now"; seeding past the wall clock
+        # would make every live event late until that time.
+        seed = min(newest, datetime.now(tz=UTC) - timedelta(seconds=windower.allowed_lateness_s))
+        windower.seed_watermark(seed)
+```
+
+The seed can never be later than what an idle `advance_to` would have
+produced anyway, so it can never close a window the live feed is still
+entitled to fill.
+
+## Takeaways
+
+- **A watermark is a promise about the future, not a fact about the past.**
+  "Newest event seen" is only a valid promise when there is one ordered
+  source. A partitioned topic is several sources, and the promise is the
+  minimum over them.
+- **Every safeguard on the watermark needs its own escape hatch.** The
+  minimum needs an idleness timeout, or one quiet partition stalls
+  everything. The idleness timeout needs a wall-clock advance, or the last
+  window of a quiet night never closes. Each one is a documented trade,
+  not a hidden heuristic.
+- **Anything that can raise the watermark is an input you have to
+  distrust**, including your own database. A seed is just another source,
+  and a replay is just another writer.
+- **Keep the late-event counter on the dashboard**, precisely because it
+  should be zero. Both of these bugs were found by a number that was not
+  supposed to move.

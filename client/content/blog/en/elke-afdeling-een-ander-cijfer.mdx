@@ -1,0 +1,102 @@
+---
+title: "Every department reports a different revenue figure: why, and what to do"
+date: "2026-08-18"
+excerpt: "Sales reports growth, finance sees decline, and the first twenty minutes of the monthly meeting go to whose number is right. It's rarely a calculation error — and it doesn't go away with better communication. Where the gap really comes from, what you can do about it this month, and what the structural fix looks like."
+tags: ["Business", "Data Warehouse", "Reporting"]
+topic: "data-engineering"
+---
+Sales reports 8% growth. Finance sees a 2% decline. Both have a dashboard,
+both have an export, and the first twenty minutes of the monthly meeting once
+again go to the question of whose number is right — instead of what should
+happen next.
+
+If this sounds familiar: it's almost never a calculation error. Everyone is
+calculating correctly. That's exactly the problem.
+
+> The problem is not that someone is calculating wrong. The problem is that
+> everyone is calculating right — with a different definition.
+
+## Where the gap really comes from
+
+In the engagements I do, the discrepancy almost always comes from the same
+five corners. Walk through them and you'll probably recognise your own
+organisation in three or four.
+
+**1. Different definitions.** "Revenue" sounds like a word with one meaning,
+until you push. Including or excluding VAT? Booked at order, at invoice or at
+payment? Do credit notes count, and in which month? Sales counts at
+signature, finance at invoice date — and then a structural gap isn't an
+anomaly but a mathematical certainty. The same goes for "customer" (active?
+unique per branch?), "employee" (FTE or headcount?) and virtually every other
+core figure.
+
+**2. Different moments.** Finance looks at a closed month; sales looks live
+in the CRM. A report that runs on Monday and an export from Wednesday give
+different answers to the same question — and nobody remembers which number
+came from which moment.
+
+**3. Different sources.** The CRM, the accounting system and the POS each
+hold their own truth, and they diverge: an order that exists in the CRM but
+hasn't been invoiced yet, a correction applied only in the books. Every
+department faithfully reports from the system it works in.
+
+**4. Manual steps in between.** Somewhere between source and report there is
+almost always an Excel: an export with a filter ("just removing the internal
+orders"), a formula someone once adjusted, a tab that has been copied forward
+for years. Each of those steps is a silent change of definition — invisible
+and undocumented.
+
+**5. History shifts.** A customer moves region, a team is split, a product
+group is reclassified. One report applies the new structure retroactively,
+the other doesn't — and "compared to last year" means something different in
+every report.
+
+## Why another meeting won't fix it
+
+The reflex is understandable: get everyone in a room and agree which figure
+is leading. That works for exactly one quarter. Then there's a new colleague,
+an adjusted formula or a new source, and the gap is back.
+
+The cause is structural: the definitions live in heads and in Excel formulas,
+not in a place where they are enforced. As long as every department has its
+own route from source to report, every route produces its own truth — no
+matter how good the agreements are.
+
+## What you can do yourself this month
+
+Without hiring anyone, and with immediate payoff:
+
+- **Pick the five figures the argument is actually about** and write one
+  definition for each, including the edge cases (VAT, credit notes, snapshot
+  moment, internal orders). One page, visible to everyone. That single
+  document takes the sting out of half the discussions.
+- **Appoint one owner per figure.** Not a department — a person. When things
+  change, the owner decides, and the definition gets updated instead of
+  worked around.
+- **Trace one figure from source to report, once.** Put the route on paper:
+  which system, which export, which Excel, which filters. Almost always you
+  find a step along the way that nobody knew existed. That walk costs an
+  afternoon and is the best diagnosis there is.
+- **Cut parallel exports where you can.** Every copy of the data is a future
+  discrepancy. One report as the agreed source per topic — even if that
+  report isn't perfect yet.
+
+## The structural fix
+
+The agreements above make things better; they don't make them hold. It only
+holds once the definition isn't written in a document but **enforced** in the
+technology: one place where the data from all sources comes together, where
+exactly one calculation exists per figure, and where every change is tested
+before it reaches a report.
+
+That is what a data warehouse fundamentally is — not a bigger dashboard, but
+the end of parallel routes. The argument doesn't stop because people honour
+agreements better; it stops because only one number *exists*.
+
+I've built exactly that in the open: [an open-data warehouse](/en/projects/open-data-warehouse)
+with a Kimball star schema, one pinned-down definition per figure, and tests
+on every pull request — so you can see what "one number" looks like in
+practice, down to the SQL.
+
+*Recognise the diverging routes from your own organisation?
+[Get in touch](/en/contact) — I'm always happy to compare notes.*

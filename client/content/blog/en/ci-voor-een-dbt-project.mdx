@@ -1,0 +1,111 @@
+---
+title: "CI for a dbt project: every pull request builds the whole warehouse"
+date: "2026-08-03"
+excerpt: "In my open-data warehouse, every pull request runs the full chain: linting, dbt build with all tests, and fresh documentation. One workflow file, no external infrastructure. Here's how it fits together."
+tags: ["Engineering", "dbt", "CI/CD"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+In [the open-data warehouse](/blog/open-data-warehouse-met-dbt) I promised that
+nothing goes to main without the full chain having run. That promise is one
+YAML file: `.github/workflows/ci.yml`, sixty lines, one job. In this piece I
+walk through it — not line by line, but along the decisions inside it. Because
+a CI pipeline is like a data model: the code is written quickly, the choices
+are the work.
+
+## The problem: the data isn't in git
+
+The first question for CI on a data project isn't "which steps do I run",
+but "what do I run them *on*". The raw data — millions of RDW registrations —
+lives in `data/raw/`, and that directory is kept out of git for good reasons.
+A pipeline that needs the real source is slow, expensive, and dependent on an
+external API that can return something different at any moment.
+
+The solution isn't in the workflow but in the dbt project itself. The sources
+are defined with an environment variable in the path:
+
+```yaml
+meta:
+  external_location: "{{ env_var('DBT_RAW_DIR', 'data/raw') }}/rdw_{name}.parquet"
+```
+
+Locally, `DBT_RAW_DIR` defaults to `data/raw/`. In CI, the workflow points it
+at `tests/fixtures/` — a small, checked-in set of parquet files with the same
+structure as the real source, including the data quality problems the
+warehouse is supposed to solve. One variable, and exactly the same models,
+tests and documentation run on a source that loads in seconds.
+
+> CI doesn't test today's data. CI tests whether the *logic* holds on data
+> you know the exact contents of.
+
+DuckDB being the engine makes the rest trivial: the warehouse is a file. No
+test environment to request, no credentials in secrets, no cost per run. In
+`profiles.yml` — deliberately in the repo, not in `~/.dbt/` — a separate
+`ci` target sits next to `dev`, so a CI run can never accidentally touch a
+local database.
+
+## Fail fast, in the right order
+
+The job itself is a straight line, but the order of the steps is deliberate:
+
+1. **`ruff check .`** — the cheapest check first. A typo in a Python loader
+   shouldn't cost a dbt run of several minutes.
+2. **`dbt deps`** — *before* the SQL linter, which is less obvious than it
+   looks. sqlfluff runs here with the dbt templater, which genuinely compiles
+   the models instead of guessing the Jinja away. That does mean `dbt_utils`
+   has to be installed, or the linter trips over every `{{ dbt_utils.* }}`
+   call.
+3. **`sqlfluff lint models`** — style and structure of all SQL, seen the way
+   DuckDB sees it.
+4. **`dbt build --target ci`** — build the models *and* run all tests in
+   dependency order: uniqueness, required fields, referential integrity
+   between facts and dimensions.
+5. **`dbt docs generate --static`** — the full documentation with lineage,
+   as one self-contained HTML file.
+
+That last step is more than a formality. The documentation and the
+`manifest.json` are uploaded as an artifact — with `if-no-files-found: error`,
+because a documentation step that silently produces nothing is worse than one
+that fails. Every change ships with a downloadable, current description of
+the whole model. Documentation that's regenerated on every merge *can't* go
+stale.
+
+## The small things you only miss when they're gone
+
+Three lines at the top do a disproportionate amount of work:
+
+```yaml
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+Push three times in quick succession and you want one relevant result — not
+three queued runs, two of which are about outdated code. Stale runs get
+cancelled the moment a new one starts.
+
+Also: `permissions: contents: read`. The workflow can read the repo and
+nothing else. A CI pipeline that only has to build shouldn't hold a token it
+can write with — the same principle as authorisation in a data warehouse,
+applied to the pipeline itself.
+
+And the pip cache is keyed on *both* requirements files, so a changed dev
+dependency invalidates the cache just as much as a changed runtime
+dependency. Small detail; saves a minute every run.
+
+## Why this matters for your organisation
+
+This is the same discipline I encounter at clients under more expensive
+names: a DTAP street, a release process, a quality gate. The essence fits in
+sixty lines of YAML: every change first proves the whole chain still works,
+on a predictable source, and delivers its own current documentation. The
+technology differs per environment — Azure DevOps, GitLab, Databricks
+Workflows — but the questions are the same everywhere: what does your test
+run on, what do you check in which order, and what do you keep as evidence?
+
+*The full workflow file is on [GitHub](https://github.com/datavakwerk/nl-vehicle-warehouse).*
+
+*Does every change in your data team already pass through a gate like this —
+or does something still occasionally slip into production quietly?
+[Book an intro call](mailto:datavakwerk@ruudjuffermans.nl) — I'm happy to take
+a look with you.*

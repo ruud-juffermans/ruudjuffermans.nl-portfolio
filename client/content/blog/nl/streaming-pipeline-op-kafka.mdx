@@ -1,0 +1,91 @@
+---
+title: "Realtime ov-vertragingen op Kafka: een streaming pipeline die 24 uur onbeheerd draait"
+date: "2026-08-10"
+excerpt: "Batchpipelines beantwoorden de vragen van gisteren. Voor de vraag 'waar staat het nu stil?' bouwde ik een streaming pipeline op de realtime posities van het Nederlandse ov — met Kafka, vensters van vijf minuten, een dead-letter queue en een live vertragingskaart."
+tags: ["Project", "Kafka", "Streaming"]
+topic: "data-engineering"
+project: "ov-streaming-pipeline"
+---
+De meeste datplatforms draaien in batch, en meestal is dat prima: rapportages
+over gisteren hebben geen seconden nodig. Maar sommige vragen verlopen terwijl
+je ze beantwoordt. "Welke lijnen hebben *nu* vertraging, en hoe erg?" is
+waardeloos als het antwoord uit de nachtelijke run van gisteren komt.
+
+Streaming beantwoordt die vraag — en introduceert tegelijk precies de
+problemen waar batchpipelines nooit mee te maken krijgen: berichten die te
+laat komen, berichten die dubbel komen, berichten die niet te parsen zijn, en
+een verwerking die nooit "even opnieuw" kan draaien omdat de bron niet wacht.
+Wie streaming zegt, moet die vier problemen kunnen aanwijzen in zijn ontwerp.
+Daarom bouwde ik **`ov-streaming-pipeline`**: een streaming pipeline op de
+realtime voertuigposities van het Nederlandse openbaar vervoer.
+
+## Het probleem, concreet
+
+De NDOV/OVapi-feed levert duizenden berichten per minuut: voertuigposities en
+aankomstvoorspellingen van treinen en bussen, landelijk. Een publieke feed is
+bovendien eerlijk gezegd rommelig — onparseerbare berichten zijn een
+zekerheid, geen uitzondering. De opdracht die ik mezelf gaf: verwerk die
+stroom tot betrouwbare vertragingscijfers per lijn en per station, laat ze
+live op een kaart zien, en laat het geheel een etmaal onbeheerd draaien
+zonder dat er iets omvalt of stilletjes fout telt.
+
+## De oplossing
+
+De keten: een Python-producer leest de feed en publiceert naar Kafka-topics
+(Redpanda als broker). Een streamprocessor berekent per venster van vijf
+minuten het aantal metingen, de gemiddelde vertraging, de P90 en het maximum —
+per lijn en per station. De aggregaten landen in Postgres, een
+Streamlit-dashboard tekent er elke tien seconden een kaart van. Alles start
+met één commando: `make up`.
+
+De code is niet het interessante deel; de keuzes eronder wel.
+
+- **Idempotente verwerking.** De consumer commit zijn offset pas ná de upsert
+  in Postgres, en de upsert-sleutel is (venster, dimensie). Herlevering kan
+  een afgesloten venster daardoor nooit dubbel tellen — de standaardvraag
+  over at-least-once-verwerking, beantwoord in code én in een test.
+- **Dead-letter queue.** Berichten die niet door de parser komen, verdwijnen
+  niet en blokkeren niets: ze landen in een apart topic met foutmetadata,
+  zijn zichtbaar in Grafana, en na een parserfix verwerkt
+  `make replay-dlq` ze alsnog.
+- **Ruw archief vóór verwerking.** Elk bericht wordt onbewerkt gearchiveerd
+  naar objectopslag voordat er iets mee gebeurt. Gaat de verwerking mis, dan
+  is er altijd een replay-pad vanaf de bron — dezelfde reflex als een
+  ruwe-datalaag in een warehouse.
+- **Late events als beleid, niet als verrassing.** Een venster wacht een
+  vaste tolerantie op nakomers; wat later binnenkomt wordt geteld als metriek
+  en bewust weggelaten. Een afweging die je documenteert, niet verstopt.
+- **Schema-evolutie.** Elk event draagt een schemaversie; de parser
+  ondersteunt de huidige en de vorige. Hoe een volgende versie uitrolt zonder
+  de pipeline te breken, staat uitgeschreven in de README.
+
+## Het resultaat
+
+De lat lag vooraf vast, en hij is gehaald: een schone clone start de
+volledige stack met één commando, en de pipeline heeft een **aaneengesloten
+run van 24 uur** doorstaan op landelijk feedvolume — zonder ingrijpen, met
+een consumer-lag die begrensd bleef in plaats van gestaag op te lopen. De
+gemeten doorvoer staat in de README, naast de Grafana-grafieken van de run.
+Een test bewijst dat dubbele aanlevering de cijfers niet kan vervuilen, en de
+DLQ-route is gedemonstreerd van fout bericht tot herverwerking. Op de kaart:
+de actuele vertragingen, hooguit een half uur nadat de trein ze oploopt —
+meestal binnen de minuut.
+
+> Streaming is geen snellere batch. Het is een ander contract: fouten zijn
+> permanent tenzij je er vooraf een pad voor hebt gebouwd.
+
+## Waarom dit relevant is voor jouw organisatie
+
+Weinig organisaties hebben vandaag een Kafka-cluster nodig. Maar de
+discipline hierachter — fouten expliciet afhandelen, verwerking idempotent
+maken, alles meten — is dezelfde die een nachtelijke batchketen betrouwbaar
+maakt. En als de vraag wél realtime wordt, is het verschil tussen een demo en
+een systeem precies wat dit project laat zien: de dead-letter queue, de
+herleveringstest, het etmaal onbeheerd draaien.
+
+*De volledige code, de gemeten doorvoer en een schermopname van het live
+dashboard staan op [GitHub](https://github.com/datavakwerk/ov-streaming-pipeline).*
+
+*Speelt er bij jouw organisatie een vraag die eigenlijk niet op gisteren kan
+wachten? [Plan een kennismaking](mailto:datavakwerk@ruudjuffermans.nl) — dan
+kijk ik graag een keer mee.*

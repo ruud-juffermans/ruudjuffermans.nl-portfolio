@@ -1,0 +1,252 @@
+---
+title: "Turning a full snapshot feed into a change stream (and why you still need a heartbeat)"
+date: "2026-09-13"
+excerpt: "The Dutch public-transport feed re-sends every vehicle and every trip once a minute. Publishing that verbatim is hundreds of messages per second of repeats, but only publishing changes quietly breaks your window means. The fix is a heartbeat, and the heartbeat had a bug worth 0.02 seconds."
+tags: ["Engineering", "Kafka", "Streaming"]
+topic: "data-engineering"
+project: "ov-streaming-pipeline"
+---
+In the overview post about `ov-streaming-pipeline` I mentioned in one line
+that the producer "diffs each full snapshot against the previous one and
+publishes only changes (plus a heartbeat)". That parenthesis is this whole
+post. Diffing a snapshot feed is the obvious optimisation. The heartbeat is
+what keeps the optimisation from lying to you, and getting it right took a
+bug worth 0.02 seconds.
+
+## A feed that repeats itself
+
+Both OVapi files, `vehiclePositions.pb` and `tripUpdates.pb`, are GTFS-RT
+`FULL_DATASET` snapshots. There is no "what changed since your last call";
+every poll returns every vehicle and every trip, and the files regenerate
+about once a minute. In the morning peak that is roughly 4 900 vehicles and
+17 000 trip updates per snapshot. Conditional GET is not honoured, so you
+cannot even ask "has anything changed?" cheaply.
+
+The naive design publishes each snapshot to Kafka as-is. The module docstring
+in `differ.py` does the arithmetic:
+
+```python
+"""Turn full-snapshot polls into change events.
+
+Both OVapi feeds are ``FULL_DATASET`` snapshots: every poll repeats every vehicle and every
+trip. Publishing each snapshot verbatim would turn a 10 s poll of 7 000 trips into 700 msg/s
+of mostly-unchanged data. The differ keeps the last fingerprint per key and emits an event only
+when it changed — plus a periodic heartbeat (``max_age_s``) so every active key still shows up
+in every window even when its delay is stable. That heartbeat is what keeps the window means
+honest: without it a trip that sits at +300 s for ten minutes would be counted once.
+"""
+```
+
+Seven hundred messages per second, almost all of them saying "still the
+same". The broker would take it; the single Python consumer behind it would
+spend most of its time re-deriving statistics that had not moved.
+
+## Emit only what changed
+
+`SnapshotDiffer` is a dict from key to the last fingerprint it published,
+when it published it, and in which poll it last saw the key. `key` and
+`fingerprint` are callables you pass in, so one class serves both feeds.
+
+```python
+@dataclass
+class SnapshotDiffer[T]:
+    key: Callable[[T], Hashable]
+    fingerprint: Callable[[T], Hashable]
+    max_age_s: float | None = 60.0
+    # A poll scheduled every 60 s lands at 59.98 s on the monotonic clock; without slack a 60 s
+    # heartbeat would fire on every *other* poll. Any poll at or past (max_age_s - jitter_s) counts.
+    jitter_s: float = 5.0
+    evict_after_polls: int = 30
+    clock: Callable[[], float] = time.monotonic
+    ...
+```
+
+The interesting choice is what goes into the fingerprint. In the producer the
+two feeds get different answers:
+
+```python
+# A vehicle that did not report again has the same timestamp: nothing new.
+SnapshotDiffer(
+    key=lambda e: e.vehicle_id, fingerprint=lambda e: e.timestamp, max_age_s=None
+),
+...
+SnapshotDiffer(
+    key=lambda e: e.trip_id,
+    fingerprint=lambda e: (e.stop_id, e.delay_seconds),
+    max_age_s=cfg.heartbeat_s,
+),
+```
+
+For positions, the vehicle's own report timestamp *is* the fingerprint: a
+vehicle that has not reported again is by definition unchanged. For
+predictions it is the opposite. An `ArrivalPrediction` carries a timestamp
+too, but the parser sets it to the feed header time (`timestamp=feed_time`),
+and the header changes every minute whether or not any trip moved. Put that
+in the fingerprint and the differ suppresses nothing, ever. So the prediction
+fingerprint is `(stop_id, delay_seconds)`: the trip's next stop and its delay
+at that stop. If neither moved, the passenger on the platform sees the same
+thing, and there is nothing to publish.
+
+That is the whole diff, and the first two tests read like its spec:
+`test_first_snapshot_is_emitted_entirely` and
+`test_unchanged_keys_are_suppressed_and_changed_ones_emitted`. Then the
+tests get more interesting.
+
+## The lie in the window mean
+
+The processor computes, per five-minute window and per line or station,
+the count, the mean delay, the P90 and the maximum, over the *events* it
+receives. Now picture a train that is 300 seconds late and stays exactly
+300 seconds late for ten minutes. The feed reports it every minute. The
+differ, doing its job, publishes it once and then nothing.
+
+In the first window that train is one of the samples. In the second window
+it does not exist. The line's mean delay drops, not because anything
+improved, but because its most delayed trip stopped *changing*. Meanwhile a
+trip whose delay flaps between +58 and +62 every minute is published five
+times per window and counts five times as much. A mean over "what changed"
+is a mean over the noisy trips.
+
+![Without the heartbeat a stable delay vanishes from every window after the first one it appeared in](/images/blog/ov-snapshot-differ-heartbeat/ov-snapshot-differ-1-stuck-trip.svg "Without the heartbeat a stable delay vanishes from every window after the first one it appeared in.")
+
+The fix is a heartbeat. An unchanged key is re-emitted anyway once it has not
+been published for `max_age_s`:
+
+```python
+if seen is None or seen.fingerprint != fp:
+    self._seen[k] = _Seen(fp, now, self._poll)
+    out.append(event)
+    stats.emitted += 1
+elif (
+    self.max_age_s is not None
+    and now - seen.emitted_at >= self.max_age_s - self.jitter_s
+):
+    seen.emitted_at = now
+    seen.last_seen_poll = self._poll
+    out.append(event)
+    stats.emitted += 1
+    stats.heartbeats += 1
+else:
+    seen.last_seen_poll = self._poll
+    stats.unchanged += 1
+```
+
+The producer sets `max_age_s` to `HEARTBEAT_S`, 60 seconds by default, and
+only on the predictions feed. Positions run with `max_age_s=None`: they feed
+the map, and a vehicle that has not moved does not need redrawing. With a
+60 s heartbeat every active trip appears in every five-minute window, stable
+or not, and the statistics come out the same as if you had published every
+snapshot. The README's decisions table puts the trade as "5–20× fewer
+messages with identical window statistics".
+
+## The heartbeat that fired every other poll
+
+The first version had no `jitter_s`. The condition was
+`now - seen.emitted_at >= self.max_age_s`: poll every 60 s, heartbeat every
+60 s. Half the heartbeats went missing.
+
+The scheduler in the producer looks like this:
+
+```python
+while not stop.is_set():
+    now = time.monotonic()
+    for feed in self.feeds:
+        if now >= feed.next_due:
+            feed.next_due = now + feed.interval_s
+            self.poll_once(feed)
+    sleep_for = max(0.0, min(f.next_due for f in self.feeds) - time.monotonic())
+    stop.wait(min(sleep_for, 1.0))
+```
+
+The scheduler's "60 seconds" is measured between two wake-ups of that loop.
+The differ's "60 seconds" is measured between two calls to `clock()` inside
+`diff()`, which runs after the HTTP fetch and the protobuf parse of each
+poll. Those are different pairs of instants. If this fetch was a few
+milliseconds quicker than the last one, the differ sees the two polls 59.98
+seconds apart. `59.98 >= 60` is false: no heartbeat. The next poll lands at
+roughly 119.96 seconds since the last emit, which passes, and the clock
+resets. The heartbeat fired on every *other* poll, so a stable trip appeared
+every two minutes instead of every minute and got half the weight it should
+have.
+
+Nothing was wrong with `time.monotonic()`. What was wrong was treating two
+independently measured intervals as the same number.
+
+![Comparing against 60 s exactly makes the heartbeat fire on every other poll; the jitter allowance is what makes it fire on every one](/images/blog/ov-snapshot-differ-heartbeat/ov-snapshot-differ-2-jitter.svg "Comparing against 60 s exactly makes the heartbeat fire on every other poll; the jitter allowance is what makes it fire on every one.")
+
+The fix is the `jitter_s` slack in the snippet above: any poll at or past
+`max_age_s - jitter_s` counts, and the test pins the exact number that
+bit me:
+
+```python
+def test_heartbeat_tolerates_poll_scheduling_jitter():
+    clock = Clock()
+    differ = make(clock, max_age_s=60, jitter_s=5)
+    differ.diff([("a", 1)])
+    clock.t += 59.98  # a "60 s" poll interval as the monotonic clock actually sees it
+    out, stats = differ.diff([("a", 1)])
+    assert out == [("a", 1)] and stats.heartbeats == 1
+```
+
+The clock is injectable, which is what makes that test possible without
+sleeping, and lets `test_heartbeat_reemits_stable_keys_after_max_age`
+(advance 30 s: nothing; 31 s more: one heartbeat) run in microseconds.
+
+## Forgetting vehicles, and the measured effect
+
+A differ that only ever adds keys grows forever: every trip id of every day
+stays in the dict, and a bus back from the depot tomorrow is compared
+against yesterday's fingerprint. `evict_after_polls` handles this. A key
+absent for that many consecutive polls is deleted, and if it comes back it
+is treated as new.
+
+```python
+stale = [
+    k
+    for k, s in self._seen.items()
+    if self._poll - s.last_seen_poll >= self.evict_after_polls
+]
+for k in stale:
+    del self._seen[k]
+stats.evicted = len(stale)
+```
+
+Counting polls rather than seconds makes the rule the same whether the
+producer runs at full speed or is backing off after an HTTP 429.
+`test_keys_missing_for_n_polls_are_evicted_then_treated_as_new` covers both
+halves of that sentence, and the dict's size is exported as
+`producer_differ_keys` for Grafana.
+
+Every poll also increments `producer_entities_total` with one of four
+`outcome` labels: `event`, `unchanged`, `error` or `skipped`. Heartbeats
+count as `event`, because that is what they are on the wire. The README's
+suppression figure is then one PromQL ratio, generated by `make throughput`:
+
+```python
+(
+    "Suppressed by differ (share)",
+    f'sum(increase(producer_entities_total{{outcome="unchanged"}}[{RANGE}])) / sum(increase(producer_entities_total{{outcome=~"unchanged|event"}}[{RANGE}]))',
+    "{:.1%}",
+),
+```
+
+In the Monday morning peak (08:15–09:15) that came out at 45 % of entities
+suppressed, with 176 msg/s in on average and 347 msg/s in the peak minute,
+which is what a fresh snapshot right after a poll looks like. The README's
+gloss on the average: "positions ≈ 1 change per vehicle per minute +
+predictions heartbeat every minute". Late evening, with about 1 400 vehicles
+on the road, the same pipeline sits at 50–110 msg/s.
+
+## Takeaways
+
+- The diff is easy; the fingerprint is the work. Leave out anything that
+  changes on every snapshot regardless of content, like a feed header
+  timestamp.
+- "Publish only changes" changes the statistics downstream: an aggregate
+  that counts events now counts *volatility*. A heartbeat restores the
+  sampling the aggregate assumes.
+- Two "60 seconds" measured between different instants are not equal. Give
+  time thresholds slack, and put the real number from production in the test.
+- Inject the clock. None of these behaviours needs a `sleep` to test.
+- Count polls, not seconds, for eviction; count outcomes, not messages, in
+  the metrics, so the suppression ratio is one query away.

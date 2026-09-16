@@ -1,0 +1,85 @@
+---
+title: "An open-data warehouse done properly: dbt, tests and a Kimball star schema"
+date: "2026-07-26"
+excerpt: "Dashboards rarely fail on the visualisation and almost always on the foundation underneath. So I built a warehouse on Dutch open data in the open — with everything that belongs in one: a star schema, tests in CI and documentation that cannot go stale."
+tags: ["Project", "dbt", "Data Engineering"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+Ask ten organisations about their dashboard problem and nine times it isn't a
+dashboard problem. The figures don't agree with each other, nobody knows which
+definition came from where, and every change in the source silently breaks three
+reports. The real work sits underneath the visualisation: a data model that's
+correct, documented, and tested.
+
+That work is hard to show in a portfolio — it normally happens behind a
+client's firewall. So I rebuilt it in the open, on data that belongs to all
+of us: **`nl-vehicle-warehouse`**, an end-to-end analytics platform on
+Dutch open data.
+
+## The setup
+
+The source is the RDW's open vehicle registration data — millions of vehicles,
+freely available, with real volumes and real data quality problems — enriched
+with CBS statistics per municipality. The chain:
+
+1. **Ingestion.** A Python loader fetches the data incrementally and writes
+   raw files. No manual steps: running it again gives the same result.
+2. **Warehouse.** DuckDB as the engine — free, fast, and runnable in CI. The
+   dbt project is set up so the same models also land on Snowflake or
+   Databricks; only the connection differs.
+3. **Transformation.** dbt in three layers: *staging* (cleaning and renaming),
+   *warehouse* (the star schema) and *marts* (ready for use).
+
+## Kimball, made explicit
+
+The heart of the project is a dimensional model along Kimball lines — and not
+implicitly, but written down. Every fact table has a **grain statement**: one
+sentence pinning down what one row means ("one row per vehicle registration").
+Every dimension has a documented choice about history (SCD type 1 or 2) and
+why.
+
+That sounds like a formality. It's the difference between a model you still
+dare to build on six months later and a collection of tables nobody wants to
+touch. The arguments about figures I run into at clients almost always start
+with a grain that was never pinned down.
+
+## Testing as a habit, not a project
+
+Every change goes through a pull request, and every pull request runs the full
+chain: linting on SQL and Python, then `dbt build` with all tests — uniqueness,
+required fields, referential integrity between facts and dimensions. Red is
+red; nothing rides along to main.
+
+> A data model without tests is a promise. A data model with tests in CI is
+> an agreement.
+
+The dbt documentation with the full lineage — from raw source to mart — is
+regenerated on every change, so the documentation can't go stale by
+definition.
+
+## The result
+
+One `make` command builds a queryable warehouse from an empty directory: a
+fresh snapshot of the source, millions of RDW rows loaded incrementally, the
+star schema built, all tests green. Three fact tables, each with an explicit
+grain — including two different grains in one schema, which is exactly what
+dimensional modelling is about — and a municipality dimension with type 2
+history, so boundary reforms don't retroactively shift historical figures.
+Every pull request proves in CI that the whole chain still holds, and ships
+the up-to-date lineage documentation as a by-product. Not a demo that worked
+once, but a platform that proves it works again on every change.
+
+## Why this matters for your organisation
+
+Everything in this project applies one-to-one to the environments I work in: a
+management-information function that has to be reliable, definitions that are
+pinned down, changes that aren't allowed to break things silently. The
+technology differs per organisation — SAS, Power BI, Databricks, Snowflake —
+but the discipline is the same everywhere.
+
+*The full code and documentation are on [GitHub](https://github.com/datavakwerk/nl-vehicle-warehouse).*
+
+*Curious what a foundation like this would look like under your reporting?
+[Book an intro call](mailto:datavakwerk@ruudjuffermans.nl) — I'm happy to take
+a look with you.*

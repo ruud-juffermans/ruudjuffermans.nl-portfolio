@@ -1,0 +1,347 @@
+---
+title: "Dutch public holidays in SQL: a date dimension that's right even on 5 May 2016"
+date: "2026-08-03"
+excerpt: "Almost every management-information question in government is about lead time in working days. Which means your warehouse has to know when Easter falls — and what happens when two holidays land on the same day."
+tags: ["Engineering", "SQL", "DuckDB"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+Almost every management-information question I get at a public-sector
+organisation is, sooner or later, about lead time. How long does an objection
+take? Are we meeting the statutory deadline? And then the inevitable
+addition: *in working days, of course*.
+
+That shifts the question from the report to the foundation. A warehouse that
+can count working days has to know when Easter falls. And Easter doesn't fall
+on a fixed date.
+
+In my open-data warehouse this lives in two files: a dbt macro that computes
+the Dutch public holidays, and the date dimension that uses it. Below I walk
+through both — including the two places where it goes wrong if you're not
+careful.
+
+## First, a spine
+
+A date dimension starts with one row per day, without gaps. Gaps are lethal:
+if your dimension is missing 29 February 2024, every fact from that day
+silently disappears from your reporting the moment someone uses an inner
+join.
+
+`dbt_utils` has a macro for that:
+
+```sql
+with spine as (
+
+    {{ dbt_utils.date_spine(
+        datepart="day",
+        start_date="cast('1990-01-01' as date)",
+        end_date="cast('2030-01-01' as date)"
+    ) }}
+
+),
+
+kalender as (
+    select cast(date_day as date) as datum from spine
+),
+```
+
+The end date is exclusive, so this yields 14,610 rows: 1 January 1990 through
+31 December 2029. Plenty for history and for the forward-looking deadlines
+planners work with.
+
+## Computing Easter
+
+All the moving Dutch holidays hang off Easter Sunday. Good Friday is two days
+before, Ascension Day 39 days after, Whit Sunday and Whit Monday 49 and 50.
+Compute Easter and you get the rest for free.
+
+For that there's the *anonymous Gregorian Easter algorithm* — a sequence of
+integer divisions and modulos that produces the date from a year:
+
+```sql
+basis as (
+    select
+        jaar,
+        jaar % 19   as a,
+        jaar // 100 as b,
+        jaar % 100  as c
+    from jaren
+),
+
+hulp as (
+    select
+        jaar, a, b, c,
+        b // 4        as d,
+        b % 4         as e,
+        (b + 8) // 25 as f,
+        c // 4        as i,
+        c % 4         as k
+    from basis
+),
+
+maand_h as (
+    select
+        jaar, a, e, i, k,
+        (19 * a + b - d - (b - f + 1) // 3 + 15) % 30 as h
+    from hulp
+),
+
+maand_l as (
+    select
+        jaar, a, h,
+        (32 + 2 * e + 2 * i - h - k) % 7 as l
+    from maand_h
+),
+
+pasen as (
+    select
+        jaar,
+        make_date(
+            jaar,
+            (h + l - 7 * ((a + 11 * h + 22 * l) // 451) + 114) // 31,
+            ((h + l - 7 * ((a + 11 * h + 22 * l) // 451) + 114) % 31) + 1
+        ) as eerste_paasdag
+    from maand_l
+),
+```
+
+This is that rare code you don't need to understand to maintain — the
+algorithm has been settled for centuries. What you *do* need to know is this:
+**every division in it is an integer division.** In DuckDB that's `//`, not
+`/`.
+
+```sql
+select 2016 // 100 as int_div, 2016 / 100 as gewone_div;
+```
+```
+┌─────────┬────────────┐
+│ int_div │ gewone_div │
+├─────────┼────────────┤
+│ 20      │ 20.16      │
+└─────────┴────────────┘
+```
+
+Write `/` just once and you get a double, none of the modulos downstream work
+anymore, and your macro cheerfully produces data that looks plausible. No
+error, no crash — just a wrong Easter. Exactly the kind of bug tests exist
+for.
+
+## Koningsdag: the rule that changed twice
+
+Fixed holidays are boring, with one exception. Koningsdag (King's Day) is
+27 April, unless that's a Sunday — then it becomes 26 April. And before 2014
+it was Koninginnedag (Queen's Day) on 30 April, with the same Sunday rule
+moving it to 29 April.
+
+My spine starts in 1990, so that second branch is not a theoretical case.
+Both rules have to be in there:
+
+```sql
+koningsdag as (
+    select
+        jaar,
+        case
+            when jaar >= 2014 and isodow(make_date(jaar, 4, 27)) = 7 then make_date(jaar, 4, 26)
+            when jaar >= 2014                                        then make_date(jaar, 4, 27)
+            when isodow(make_date(jaar, 4, 30)) = 7                  then make_date(jaar, 4, 29)
+            else make_date(jaar, 4, 30)
+        end as datum,
+        case when jaar >= 2014 then 'Koningsdag' else 'Koninginnedag' end as feestdag
+    from jaren
+),
+```
+
+Over the 1990–2029 range, Koningsdag shifts twice (2014 and 2025) and
+Koninginnedag three times (1995, 2000 and 2006). Five days in forty years.
+Precisely the kind of detail nobody misses in review — and that makes a
+working-day count drift from the business's own numbers a year later.
+
+Then everything comes together in one list:
+
+```sql
+los as (
+    select make_date(jaar, 1, 1) as datum, 'Nieuwjaarsdag' as feestdag from jaren
+    union all select eerste_paasdag - 2,      'Goede Vrijdag'      from pasen
+    union all select eerste_paasdag,          'Eerste Paasdag'     from pasen
+    union all select eerste_paasdag + 1,      'Tweede Paasdag'     from pasen
+    union all select datum,                   feestdag             from koningsdag
+    union all select make_date(jaar, 5, 5),   'Bevrijdingsdag'     from jaren
+    union all select eerste_paasdag + 39,     'Hemelvaartsdag'     from pasen
+    union all select eerste_paasdag + 49,     'Eerste Pinksterdag' from pasen
+    union all select eerste_paasdag + 50,     'Tweede Pinksterdag' from pasen
+    union all select make_date(jaar, 12, 25), 'Eerste Kerstdag'    from jaren
+    union all select make_date(jaar, 12, 26), 'Tweede Kerstdag'    from jaren
+)
+```
+
+## The trap: 5 May 2016
+
+Eleven holidays times forty years is 440 rows. But there are no 440 unique
+holiday dates in that range — and that's where the bug sits that I nearly let
+through.
+
+Ascension Day is Easter plus 39 days. Because Easter can fall between
+22 March and 25 April, Ascension wanders between 30 April and 3 June.
+Bevrijdingsdag (Liberation Day) is fixed on 5 May — right in the middle of
+that range. Sooner or later they collide.
+
+```sql
+select * from feestdagen where feestdag like '% en %' order by datum;
+```
+```
+┌────────────┬──────────────────────────────────┐
+│   datum    │             feestdag             │
+├────────────┼──────────────────────────────────┤
+│ 2005-05-05 │ Bevrijdingsdag en Hemelvaartsdag │
+│ 2016-05-05 │ Bevrijdingsdag en Hemelvaartsdag │
+└────────────┴──────────────────────────────────┘
+```
+
+Twice in forty years. Without catching it, the macro produces two rows for
+5 May 2016, and the `left join` in the date dimension stops being a lookup
+and becomes a fan-out: 5 May 2016 lands in `dim_datum` twice. Your
+uniqueness test on `datum_key` raises the alarm — if you have one. If you
+don't, every fact from that day counts double from then on.
+
+The fix is one line, but it does have to be there:
+
+```sql
+select
+    datum,
+    string_agg(feestdag, ' en ' order by feestdag) as feestdag
+from los
+group by datum
+```
+
+440 rows become 438. And 5 May 2016 neatly gets the label "Bevrijdingsdag en
+Hemelvaartsdag" instead of arbitrarily one of the two.
+
+> A dimension is by definition unique on its key. Any join that silently
+> breaks that multiplies your figures instead of looking them up.
+
+## Dutch names without locale hassle
+
+Back to the dimension itself. `strftime('%B')` gives `January`, not
+`januari`, and I'm not going to configure a database locale for twelve
+words. Two literal lists are simply the right answer here:
+
+```sql
+namen as (
+    select
+        [
+            'januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
+            'augustus', 'september', 'oktober', 'november', 'december'
+        ] as maanden,
+        [
+            'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag',
+            'zaterdag', 'zondag'
+        ] as dagen
+),
+```
+
+This works so cleanly thanks to one property of DuckDB: **list indexing is
+1-based.** `month()` gives 1–12 and `isodow()` gives 1–7 (Monday–Sunday), so
+you can feed them straight in without a `- 1`:
+
+```sql
+select (['januari','februari','maart'])[3] as derde;
+-- maart
+```
+
+Coming from Python, or from an array type that does start at zero, this is a
+classic off-by-one that shifts your entire December into November.
+
+## week() and isoyear() belong together
+
+The rest of the dimension is straightforward — except for one pair of
+columns:
+
+```sql
+select
+    cast(strftime(k.datum, '%Y%m%d') as integer) as datum_key,
+    k.datum,
+    year(k.datum)                                as jaar,
+    quarter(k.datum)                             as kwartaal,
+    month(k.datum)                               as maand,
+    n.maanden[month(k.datum)]                    as maand_naam,
+    day(k.datum)                                 as dag,
+    dayofyear(k.datum)                           as dag_van_jaar,
+    isodow(k.datum)                              as dag_van_week,
+    n.dagen[isodow(k.datum)]                     as dag_naam,
+    week(k.datum)                                as weeknummer,
+    isoyear(k.datum)                             as iso_jaar,
+    isodow(k.datum) >= 6                         as is_weekend,
+    f.datum is not null                          as is_feestdag,
+    f.feestdag                                   as feestdag_naam,
+    isodow(k.datum) <= 5 and f.datum is null     as is_werkdag
+
+from kalender as k
+cross join namen as n
+left join feestdagen as f on k.datum = f.datum
+```
+
+`week()` in DuckDB is the ISO week number, and an ISO week belongs to an ISO
+year that isn't always the calendar year. Look at the last day of the spine:
+
+```
+┌────────────┬──────┬────────────┬──────────┬──────────────┐
+│   datum    │ jaar │ weeknummer │ iso_jaar │ dag_van_week │
+├────────────┼──────┼────────────┼──────────┼──────────────┤
+│ 2029-12-30 │ 2029 │ 52         │ 2029     │ 7            │
+│ 2029-12-31 │ 2029 │ 1          │ 2030     │ 1            │
+└────────────┴──────┴────────────┴──────────┴──────────────┘
+```
+
+31 December 2029 is a Monday and therefore falls in week 1 of 2030. Group by
+`jaar` and `weeknummer` together and that day lands in "week 1 of 2029" —
+between 1 and 7 January, twelve months earlier. That's why `iso_jaar` sits
+explicitly next to it: whoever groups by week number should group by
+`iso_jaar`, not `jaar`.
+
+Note also that `is_werkdag` is one derivation, pinned down once — Monday
+through Friday *and* not a holiday. That's the whole point of a date
+dimension. The definition of "working day" belongs in one place, not in
+fourteen dashboards.
+
+## The unknown member
+
+The last step is one that's missing from a lot of models:
+
+```sql
+select
+    -1                         as datum_key,
+    cast('1900-01-01' as date) as datum,
+    1900                       as jaar,
+    -- ...
+    'onbekend'                 as maand_naam,
+    -- ...
+    false                      as is_werkdag
+```
+
+Facts sometimes have no date: an objection that hasn't been settled yet, a
+source date that arrives empty or unreadable. The choice is then a `null` in
+the fact table — with a `left join` and the eternal doubt whether everyone
+writes that join correctly — or an explicit row every fact `coalesce`s to.
+
+With an unknown member, all your joins stay `inner`, referential integrity
+stays testable, and "unknown" simply shows up as a category in the report.
+Missing data becomes visible instead of falling away.
+
+## Why this is more than a calendar
+
+Forty years of dates, eleven holidays, two collisions, five shifted King's
+Days and one unknown member. About a hundred and fifty lines of SQL.
+
+The payoff is that every lead-time question afterwards gives the same answer,
+whoever asks it. No analyst writing their own quick weekend filter, no
+department counting Liberation Day while another doesn't, no steering-group
+debate about which of the two numbers is the right one.
+
+That's where management information runs aground — almost never on the
+visualisation, almost always on a definition that was never pinned down.
+
+*The full macro and model are on [GitHub](https://github.com/datavakwerk/nl-vehicle-warehouse).*
+
+*Not sure whether the lead times in your reports all rest on the same
+definition? [Book an intro call](mailto:datavakwerk@ruudjuffermans.nl) — I'm
+happy to take a look with you.*

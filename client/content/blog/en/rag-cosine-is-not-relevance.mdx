@@ -1,0 +1,253 @@
+---
+title: "Cosine similarity is not a relevance score"
+date: "2026-09-13"
+excerpt: "My RAG system over Dutch court rulings refuses to answer when the corpus has no relevant passage. That refusal used to be a cosine threshold, and it did not work: an unrelated question still scored 0.6 against some legal paragraph. A cross-encoder over the top 12 candidates fixed it. Here is why ranking well and being calibrated are two different things."
+tags: ["Engineering", "GenAI", "RAG"]
+topic: "ai"
+project: "strafrecht-rag"
+---
+`strafrecht-rag` has one rule: no source, no answer. If the corpus of criminal-law
+rulings has no passage that answers the question, the system says so and the
+language model is never called. That sounds like a threshold on a similarity
+score, and that is how I first built it. It did not work, and the reason is a
+mistake that sits in a lot of RAG pipelines: treating the number a bi-encoder
+gives you as if it meant "relevant".
+
+## What a bi-encoder score actually is
+
+The embedding model is
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, served locally
+through fastembed. It turns a text of at most 128 tokens into a 384-dimensional
+vector. The question is embedded once, every chunk was embedded at index time,
+and retrieval is the cosine between the two. That is the point of a bi-encoder:
+question and passage never meet, so the passage side can be precomputed and a
+query is one matrix multiplication over 124,952 chunks.
+
+The cosine is the angle between two vectors, nothing more. The model was trained
+so that texts that say roughly the same thing point in roughly the same
+direction; its name says "paraphrase", not "answers this question". Two
+consequences follow.
+
+First, the ordering is useful. If chunk A is closer to the question than chunk
+B, A is more often the better passage. Cosine is good enough for ranking, and
+the eval numbers (hit@6 of 100 %) confirm that.
+
+Second, the absolute value means very little. Nothing in training says "0.3 is
+unrelated and 0.7 is relevant". A small multilingual model puts all Dutch legal
+prose in the same region of the space: same register, overlapping vocabulary,
+the same sentence structure in every ruling. So the cosine between an arbitrary
+question and the *closest* of 124,952 legal paragraphs is high no matter what
+the question is about. The score ranks well; it is not calibrated.
+
+## The measured problem on this corpus
+
+This is not a theoretical concern. The docstring at the top of the reranker
+module records what I measured:
+
+```python
+"""Cross-encoder reranking: a calibrated relevance score for the top candidates.
+
+Bi-encoder cosine similarity ranks well but is not calibrated: with a small multilingual
+embedder, an unrelated question still scores 0.6 against some Dutch legal paragraph. A
+cross-encoder reads question and passage together and answers "is this relevant?"; its
+scores separate real hits from noise, which is what the no-source threshold needs.
+
+Rerankers return probabilities in [0, 1] (sigmoid of the model logit).
+"""
+```
+
+Think of a question about doping in the Tour de France: it has nothing to do
+with any of the 1,906 rulings in the corpus. Questions like that still ended up
+with a best cosine around 0.6, because out of 124,952 chunks there is always
+one that happens to sit at a similar angle. The answerable questions did not
+score reliably higher than that, so, as the README puts it, a cosine threshold
+"cannot tell 'no source' from 'source'". Whatever value I picked, it either
+refused real questions or let unrelated ones through to the model. And once an
+unrelated question reaches the model with six vaguely legal passages, the model
+does what models do: it writes something plausible.
+
+![The same two groups of questions under both scores. Only one of them leaves a gap to put a threshold in](/images/blog/rag-cosine-is-not-relevance/rag-cosine-1-score-distributions.svg "The same two groups of questions under both scores. Only one of them leaves a gap to put a threshold in.")
+
+## What a cross-encoder does differently
+
+A cross-encoder does not embed anything. It takes question and passage as one
+input sequence and runs a single transformer pass over the pair, so every token
+of the question can attend to every token of the passage. The output is not a
+vector but one logit, trained to answer "is this passage relevant to this
+query?". That is a different task from paraphrase similarity, and it produces a
+different kind of number.
+
+The model is `jinaai/jina-reranker-v2-base-multilingual`, again through
+fastembed. The wrapper is small:
+
+```python
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+class FastEmbedReranker:
+    def __init__(self, model: str) -> None:
+        ...
+        from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+        self.name = model
+        ...
+            self._model = TextCrossEncoder(model_name=model)
+
+    def score(self, query: str, texts: Sequence[str]) -> list[float]:
+        if not texts:
+            return []
+        return [_sigmoid(float(logit)) for logit in self._model.rerank(query, list(texts))]
+```
+
+The sigmoid turns the logit into a probability in [0, 1]: a number whose
+absolute value was trained to mean something. The reranker sees section title
+and chunk text together, and the candidates are re-sorted by that probability,
+with cosine only as a tie-breaker:
+
+```python
+    def _rerank(self, vraag: str, hits: list[Hit]) -> list[Hit]:
+        scores = self.reranker.score(vraag, [f"{h.sectie_titel}\n{h.tekst}" for h in hits])
+        scored = [replace(h, relevantie=s) for h, s in zip(hits, scores, strict=True)]
+        return sorted(scored, key=lambda h: (-(h.relevantie or 0.0), -h.score))
+```
+
+![In a bi-encoder the two texts never meet; in a cross-encoder they are read together. That is the whole difference](/images/blog/rag-cosine-is-not-relevance/rag-cosine-2-bi-vs-cross-encoder.svg "In a bi-encoder the two texts never meet; in a cross-encoder they are read together. That is the whole difference.")
+
+The catch is cost. A cross-encoder cannot precompute anything, so scoring is one
+forward pass per (question, passage) pair, and the model is about 560 MB against
+120 MB for the embedder. Running it over the whole index is out of the question;
+running it over a dozen candidates is not. The retriever fuses the cosine top-18
+and the BM25 top-18 with reciprocal rank fusion, and only the top 12 of that
+fused list go through the reranker:
+
+```python
+    def __init__(
+        self,
+        store: VectorStore,
+        embedder: Embedder,
+        *,
+        k: int = 6,
+        threshold: float = 0.35,
+        hybrid: bool = True,
+        per_ecli: int = 2,
+        reranker: Reranker | None = None,
+        rerank_top: int = 12,
+    ) -> None:
+```
+
+On a laptop CPU that stage costs a few seconds per question. Against the
+alternative, a confidently wrong answer, that is cheap. The bi-encoder does what
+it is good at (narrowing 124,952 chunks to 12 in milliseconds) and the
+cross-encoder does what it is good at (judging 12 pairs carefully).
+
+## Where the threshold lives now
+
+The threshold did not disappear; it moved. `_relevance` returns the
+cross-encoder probability when there is one and falls back to cosine when the
+reranker is off (`RAG_RERANKER=none`), so one code path serves both modes and
+the tests run without downloading a model:
+
+```python
+def _relevance(hit: Hit) -> float:
+    return hit.relevantie if hit.relevantie is not None else hit.score
+```
+
+The decision itself is a handful of lines in `retrieve`:
+
+```python
+        beste = max((_relevance(h) for h in fused), default=0.0)
+        if beste < self.threshold:
+            return Retrieval(
+                vraag, [], beste, self.threshold, filters, len(fused), soort, herordend, fused[:3]
+            )
+        # what scores under half the threshold is noise for the model, not a source
+        usable = [h for h in fused if _relevance(h) >= self.threshold / 2]
+        hits = _diversify(usable, k, self.per_ecli)
+        return Retrieval(vraag, hits, beste, self.threshold, filters, len(fused), soort, herordend)
+```
+
+Three things happen here.
+
+**The empty retrieval keeps the closest candidates.** When the best score is
+below the threshold (0.35 by default, `RAG_SCORE_THRESHOLD`), `hits` is empty
+but `dichtstbij` holds the three best candidates. The generator turns this into
+a `GeenBron` answer whose reason says what happened:
+
+```python
+        if not retrieval.boven_drempel:
+            return GeenBron(
+                retrieval.vraag,
+                reden=(
+                    f"beste score {retrieval.beste_score:.2f} ligt onder de drempel "
+                    f"{retrieval.drempel:.2f}; het taalmodel is niet aangeroepen"
+                ),
+                beste_score=retrieval.beste_score,
+                drempel=retrieval.drempel,
+                kandidaten=retrieval.dichtstbij,
+            )
+```
+
+The CLI shows those three under "dichtstbijzijnde passages, ter controle", with
+scores and ECLIs. A refusal that shows what it almost picked is one you can
+check; a bare "no source found" is one you have to trust.
+
+**The LLM is never called below the threshold.** "No source" is a property of
+retrieval, decided in code, before any prompt exists. The model can still answer
+`GEEN_BRON` when the passages do not answer the question, but that is a second
+safety net, not the primary one.
+
+**Half the threshold is the noise floor.** Above the threshold the question is
+answerable, but that does not make all twelve candidates sources. A passage
+scoring below `threshold / 2` is dropped before the model sees it. The test for
+this uses a threshold of 0.5 and a fixture corpus in which the unrelated rulings
+score 0; the result has fewer than `k` hits because the noise is left out
+rather than padded in. Fewer, better passages beat a context window of filler.
+
+## What the eval says
+
+The evaluation set holds 15 questions, and three of them are there specifically
+to hit the no-source path:
+
+```json
+    {"id": "q13", "type": "geen_bron", "vraag": "Wat zegt de rechter over de octrooiaanvraag voor een kernfusiereactor?", "verwacht": [], "geen_bron": true},
+    {"id": "q14", "type": "geen_bron", "vraag": "Hoe hoog mag de huurverhoging van een bedrijfspand in Utrecht zijn?", "verwacht": [], "geen_bron": true},
+    {"id": "q15", "type": "geen_bron", "vraag": "Welke uitspraken gaan over doping tijdens de Tour de France?", "verwacht": [], "geen_bron": true}
+```
+
+A fusion-reactor patent, commercial rent in Utrecht, doping in the Tour: all
+plausible Dutch legal questions, none of them criminal law, none in the corpus.
+The eval scores them on the retrieval outcome:
+
+```python
+            geen_bron_gegeven=not retrieval.boven_drempel,
+            geen_bron_correct=(not retrieval.boven_drempel) if q.geen_bron else None,
+```
+
+It reports the mirror image too: `onterecht_geen_bron`, the share of answerable
+questions that were refused. That number matters as much as the first. A
+threshold of 0.99 scores 100 % on no-source correctness and refuses everything
+else; a test asserts exactly that, so a "safe" threshold cannot quietly break
+the system.
+
+In the committed eval output (`docs/eval_results.json`, default configuration,
+k = 6) the three no-source questions end with best relevance scores of 0.266,
+0.303 and 0.090. The twelve answerable questions range from 0.412 to 0.775. The
+threshold of 0.35 sits in the gap: no-source correctness 100 %, false no-source
+0 %. Under cosine there was no gap to put a threshold in.
+
+Fifteen questions is a small set and three data points do not prove
+calibration. What they show is that the cross-encoder's number behaves like a
+probability of relevance across question types, and the cosine did not.
+
+## Takeaways
+
+- A bi-encoder's cosine is trained to order, not to mean. Use it to rank
+  candidates; do not use it to decide whether any candidate is good.
+- A cross-encoder's sigmoid output is trained on "relevant or not". That is the
+  number a no-source threshold needs.
+- The cost argument works in your favour: the expensive model only ever sees
+  the top 12, so it adds seconds, not minutes, and it never touches the index.
+- Put the refusal in code, before the model, and show the closest candidates
+  when you refuse. Then measure both directions: refused when it should, and
+  not refused when it should not.

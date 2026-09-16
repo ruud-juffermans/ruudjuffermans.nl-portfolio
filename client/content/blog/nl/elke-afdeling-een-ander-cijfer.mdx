@@ -1,0 +1,103 @@
+---
+title: "Elke afdeling een ander omzetcijfer: waarom, en wat je eraan doet"
+date: "2026-08-18"
+excerpt: "Sales rapporteert groei, finance ziet krimp, en de eerste twintig minuten van de maandvergadering gaan over wiens cijfer klopt. Dat ligt zelden aan rekenfouten — en het gaat niet over met betere communicatie. Waar het verschil echt vandaan komt, wat je er deze maand zelf aan kunt doen, en wat de structurele oplossing is."
+tags: ["Zakelijk", "Data Warehouse", "Rapportage"]
+topic: "data-engineering"
+---
+Sales rapporteert 8% groei. Finance ziet 2% krimp. Allebei hebben ze een
+dashboard, allebei hebben ze een export, en de eerste twintig minuten van de
+maandvergadering gaan weer over de vraag wiens cijfer klopt — in plaats van
+over wat er moet gebeuren.
+
+Als dit herkenbaar is: het ligt vrijwel nooit aan rekenfouten. Iedereen
+rekent goed. Dat is precies het probleem.
+
+> Het probleem is niet dat iemand fout rekent. Het probleem is dat iedereen
+> goed rekent — met een andere definitie.
+
+## Waar het verschil echt vandaan komt
+
+In de trajecten die ik doe, komt het cijferverschil vrijwel altijd uit
+dezelfde vijf hoeken. Loop ze langs en je herkent je eigen organisatie
+waarschijnlijk in drie of vier ervan.
+
+**1. Andere definities.** "Omzet" lijkt een woord met één betekenis, tot je
+doorvraagt. Inclusief of exclusief btw? Geboekt bij order, bij factuur of bij
+betaling? Tellen creditnota's mee, en in welke maand? Sales telt bij
+handtekening, finance bij factuurdatum — en dan is een structureel verschil
+geen anomalie maar een wiskundige zekerheid. Hetzelfde geldt voor "klant"
+(actief? uniek per vestiging?), "medewerker" (fte of koppen?) en vrijwel elk
+ander kerncijfer.
+
+**2. Andere momenten.** Finance kijkt naar een afgesloten maand; sales kijkt
+live in het CRM. Een rapport dat maandag draait en een export van woensdag
+geven verschillende antwoorden op dezelfde vraag — en niemand weet nog welk
+getal van welk moment was.
+
+**3. Andere bronnen.** Het CRM, de boekhouding en het kassasysteem hebben elk
+hun eigen waarheid, en die lopen uiteen: een order die wel in het CRM staat
+maar nog niet is gefactureerd, een correctie die alleen in de boekhouding is
+doorgevoerd. Elke afdeling rapporteert trouw uit het systeem waar ze zelf in
+werkt.
+
+**4. Handwerk ertussen.** Ergens tussen bron en rapport zit bijna altijd een
+Excel: een export met een filter ("even de interne orders eruit"), een
+formule die iemand ooit heeft aangepast, een tabblad dat al jaren wordt
+doorgekopieerd. Elk van die stappen is een stille wijziging van de definitie
+— onzichtbaar en ongedocumenteerd.
+
+**5. De historie schuift.** Een klant verhuist van regio, een team wordt
+gesplitst, een productgroep heringedeeld. Het ene rapport rekent de nieuwe
+indeling met terugwerkende kracht door, het andere niet — en de vergelijking
+met vorig jaar betekent in elk rapport iets anders.
+
+## Waarom een extra vergadering dit niet oplost
+
+De reflex is begrijpelijk: zet de betrokkenen bij elkaar en spreek af welk
+cijfer leidend is. Dat werkt precies één kwartaal. Daarna is er een nieuwe
+collega, een aangepaste formule of een nieuwe bron, en het verschil is terug.
+
+De oorzaak is structureel: de definities leven in hoofden en in
+Excel-formules, niet op een plek waar ze worden afgedwongen. Zolang elke
+afdeling zijn eigen route van bron naar rapport heeft, produceert elke route
+zijn eigen waarheid — hoe goed de afspraken ook zijn.
+
+## Wat je deze maand zelf kunt doen
+
+Zonder iemand in te huren, en het levert direct wat op:
+
+- **Kies de vijf cijfers waar de discussie echt over gaat** en schrijf per
+  cijfer één definitie op, inclusief de randgevallen (btw, creditnota's,
+  peilmoment, interne orders). Eén A4, publiek voor iedereen. Dit ene
+  document haalt de angel uit de helft van de discussies.
+- **Wijs per cijfer één eigenaar aan.** Niet een afdeling — een persoon. Bij
+  wijzigingen beslist de eigenaar, en de definitie wordt bijgewerkt in plaats
+  van omzeild.
+- **Volg één cijfer één keer van bron tot rapport.** Zet de route op papier:
+  welk systeem, welke export, welke Excel, welke filters. Vrijwel altijd
+  vind je onderweg een stap waarvan niemand wist dat hij bestond. Die
+  wandeling kost een middag en is de beste diagnose die er is.
+- **Schrap parallelle exports waar het kan.** Elke kopie van de data is een
+  toekomstige afwijking. Eén rapport als afgesproken bron per onderwerp —
+  ook als dat rapport nog niet perfect is.
+
+## De structurele oplossing
+
+De afspraken hierboven maken het beter; ze maken het niet houdbaar. Houdbaar
+wordt het pas als de definitie niet in een document staat maar in de techniek
+is **afgedwongen**: één plek waar de data uit alle bronnen samenkomt, waar
+per cijfer precies één berekening bestaat, en waar elke wijziging getest
+wordt voordat hij een rapport bereikt.
+
+Dat is wat een datawarehouse in de kern is — niet een groter dashboard, maar
+het einde van parallelle routes. De discussie stopt niet omdat mensen zich
+beter aan afspraken houden, maar omdat er nog maar één getal *bestaat*.
+
+Precies dat heb ik in de openbaarheid gebouwd: [een open-data-warehouse](/projecten/open-data-warehouse)
+met een Kimball-sterschema, één vastgelegde definitie per cijfer en tests op
+elke pull request — zodat je kunt zien hoe "één getal" er in de praktijk
+uitziet, tot en met de SQL.
+
+*Herken je de uiteenlopende routes uit je eigen organisatie?
+[Neem contact op](/contact) — ik praat er graag over door.*

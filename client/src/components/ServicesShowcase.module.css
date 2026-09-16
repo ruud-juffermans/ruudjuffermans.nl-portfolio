@@ -1,0 +1,446 @@
+.layout {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+
+/* Eyebrow on the left, slide squares in the right corner. */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  display: block;
+  font-family: var(--font-body), "Segoe UI", sans-serif;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #a6c8f7;
+}
+
+.title {
+  font-family: var(--font-heading), "Segoe UI", sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.9rem, 2.6vw + 1rem, 2.75rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: #ffffff;
+  margin: 0;
+}
+
+.sub {
+  margin: 18px 0 0;
+  font-size: 17px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 520px;
+}
+
+/* ── Slideshow ───────────────────────────────────────────────────────────── */
+
+/* Both slides share one grid cell, so the section is as tall as the taller
+   slide and nothing shifts when they swap. */
+.slides {
+  display: grid;
+  touch-action: pan-y;
+}
+
+.slide {
+  grid-area: 1 / 1;
+  min-width: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.slideActive {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+
+/* Each word of the heading and intro rides in its own overflow-hidden mask
+   (see MaskedWords). */
+.mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  /* Room for descenders inside the clip, taken back outside it so line
+     spacing is unchanged. */
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+
+.word {
+  display: inline-block;
+}
+
+/* The change of slide, after the CodePen "Slideshow Vanilla JS w/ CSS
+   Transition": the outgoing copy drops out of its masks word by word, then
+   the incoming copy rises into place with a wider stagger as its diagram
+   fades in. Transitions take the timing of the state they head to, so each
+   rule below sets the leg that ends in its state. `.armed` holds the hidden
+   state back until JS runs. */
+@media (prefers-reduced-motion: no-preference) {
+  /* The outgoing slide stays visible until its words have dropped. */
+  .slide {
+    transition: visibility 0s linear 0.8s;
+  }
+
+  .slideActive {
+    transition-delay: 0s;
+  }
+
+  .armed .slide:not(.slideShown) .word {
+    transform: translateY(110%);
+  }
+
+  .title .word {
+    transition: transform 0.4s cubic-bezier(0.7, 0, 0.84, 0) calc(var(--i) * 15ms);
+  }
+
+  .sub .word {
+    transition: transform 0.35s cubic-bezier(0.7, 0, 0.84, 0) calc(var(--i) * 4ms);
+  }
+
+  .slideShown .title .word {
+    transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1) calc(0.55s + var(--i) * 45ms);
+  }
+
+  .slideShown .sub .word {
+    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1) calc(0.7s + var(--i) * 8ms);
+  }
+
+  .armed .slide:not(.slideShown) .cta,
+  .armed .slide:not(.slideShown) .flowCol {
+    opacity: 0;
+  }
+
+  .armed .slide:not(.slideShown) .cta {
+    transform: translateY(8px);
+  }
+
+  .armed .slide:not(.slideShown) .flowCol {
+    transform: scale(0.97);
+  }
+
+  .cta,
+  .flowCol {
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+
+  .slideShown .cta {
+    transition: opacity 0.6s ease 1.05s, transform 0.6s cubic-bezier(0.16, 1, 0.3, 1) 1.05s;
+  }
+
+  .slideShown .flowCol {
+    transition: opacity 0.6s ease-out 0.5s, transform 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.5s;
+  }
+
+  /* The stage comes in last: it rises from below the section's bottom edge
+     once the heading has landed, and drops away first when leaving. */
+  .armed .slide:not(.slideShown) .stage {
+    opacity: 0;
+    transform: translateY(85%);
+  }
+
+  .stage {
+    transition: opacity 0.4s ease-in, transform 0.45s cubic-bezier(0.7, 0, 0.84, 0);
+  }
+
+  .slideShown .stage {
+    transition: opacity 0.5s ease-out 0.9s, transform 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.9s;
+  }
+}
+
+/* Each square is a 24px hit area around a 10px square; the negative margin
+   lines the last square up with the content edge. */
+.controls {
+  display: flex;
+  flex-shrink: 0;
+  margin-right: -7px;
+}
+
+.square {
+  appearance: none;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.square::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background 0.2s ease;
+}
+
+.square:hover::before {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.squareActive::before,
+.squareActive:hover::before {
+  background: #a6c8f7;
+}
+
+.square:focus-visible {
+  outline: 2px solid #a6c8f7;
+  outline-offset: 0;
+}
+
+/* The slideshow's timer (see ServicesShowcase.tsx): an invisible animation
+   whose end advances the slide. */
+.timer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation-name: svcTimer;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* Hold the timer while the reader is on the slides, is navigating by
+   keyboard inside the section, or has scrolled away. */
+.carousel:has(.slides:hover) .timer,
+.carousel:has(:focus-visible) .timer,
+.offscreen .timer {
+  animation-play-state: paused;
+}
+
+@keyframes svcTimer {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 26px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #a6c8f7;
+  text-decoration: none;
+}
+
+.cta:hover {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.flowVisual {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+/* A diagram image sits on a large, rotated stage. Its column is a window no
+   taller than the copy beside it; the stage is far wider and taller than
+   that and runs on past the column's bottom (and right) edge, where the
+   section's overflow: hidden crops it, so it never shows whole. */
+.stageCol {
+  position: relative;
+  align-self: stretch;
+  min-height: 460px;
+}
+
+.stage {
+  position: absolute;
+  top: -12px;
+  left: 0;
+  width: 130%;
+}
+
+.diagramImage {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 28px;
+  border-radius: 18px;
+  border: 1px solid rgba(166, 200, 247, 0.22);
+  background: rgba(13, 34, 66, 0.72);
+  transform-origin: 0 0;
+  transform: rotate(8deg);
+}
+
+.flowVisual svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* one 5s cycle: sources fire (0%), pulses reach the hub (24%),
+   the split pulses reach both outputs (72%) */
+.flowNode rect {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+  animation: flowNodeFlash 5s ease-out infinite;
+}
+
+.flowNode .flowPort {
+  fill: #0d2242;
+  stroke: rgba(255, 255, 255, 0.4);
+  stroke-width: 1;
+  animation: flowPortFlash 5s ease-out infinite;
+}
+
+.flowNodeMid rect,
+.flowNodeMid .flowPort {
+  animation-delay: 1.2s;
+}
+
+.flowNodeOut rect,
+.flowNodeOut .flowPort {
+  animation-delay: 3.6s;
+}
+
+@keyframes flowNodeFlash {
+  0% {
+    stroke: #e0ecfd;
+    filter: drop-shadow(0 0 10px rgba(166, 200, 247, 0.55));
+  }
+  22%,
+  100% {
+    stroke: rgba(255, 255, 255, 0.22);
+    filter: drop-shadow(0 0 0 rgba(166, 200, 247, 0));
+  }
+}
+
+@keyframes flowPortFlash {
+  0% {
+    fill: #e0ecfd;
+    stroke: #e0ecfd;
+  }
+  18%,
+  100% {
+    fill: #0d2242;
+    stroke: rgba(255, 255, 255, 0.4);
+  }
+}
+
+.flowNode .flowLabel {
+  font-family: var(--font-body), "Segoe UI", sans-serif;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  fill: rgba(255, 255, 255, 0.6);
+}
+
+.flowNode .flowTitle {
+  font-family: var(--font-heading), "Segoe UI", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  fill: #ffffff;
+}
+
+.flowNode .flowTitleLg {
+  font-size: 16px;
+}
+
+.flowWire {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 1.5;
+}
+
+/* lit overlay draws itself along the wire just behind the travelling pulse */
+.flowWireLit {
+  fill: none;
+  stroke: #a6c8f7;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px rgba(166, 200, 247, 0.6));
+}
+
+.flowIn {
+  animation: flowWireIn 5s linear infinite;
+}
+
+.flowOut {
+  animation: flowWireOut 5s linear infinite;
+}
+
+@keyframes flowWireIn {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  24% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  38%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes flowWireOut {
+  0%,
+  48% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  49% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  72% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  86%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+.flowPulse {
+  fill: #ffffff;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flowNode rect,
+  .flowNode .flowPort,
+  .flowWireLit {
+    animation: none;
+  }
+  .flowPulse {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .stageCol {
+    min-height: 300px;
+  }
+  .stage {
+    width: 105%;
+  }
+}

@@ -1,0 +1,62 @@
+---
+title: "Digital-twin: een AI-agent die namens mij antwoordt — met bronnen"
+industry: "Eigen project"
+summary: "Een LangGraph-agent over mijn cv, projecten en artikelen die vragen van bezoekers beantwoordt in een streaming chat: elke bewering met bron, weigeren zonder bron, een harde dagelijkse kostenlimiet en menselijke goedkeuring voordat hij namens mij handelt."
+tags: ["GenAI", "Agents", "LLM", "Python"]
+repo: "https://github.com/datavakwerk/digital-twin"
+accent: "#F59E0B"
+stats:
+  - { label: "Guards", value: "Fail closed, zonder model" }
+  - { label: "Evaluatiegrens", value: "95% tools · 90% taken" }
+  - { label: "Risicovolle acties", value: "Menselijke goedkeuring" }
+---
+
+*Eigen project, gebouwd om te laten zien hoe ik een LLM-agent verantwoord in productie zet. Het interessante deel is niet de chat — het is alles rondom het model dat het veilig maakt om onbeheerd te laten draaien.*
+
+## Wat het is
+
+Een "Digital-twin" voor deze site: een assistent die vragen over mijn werk beantwoordt — wat ik bouwde, hoe ik een probleem aanpak, of ik openstaat voor een rol — gebaseerd op mijn echte cv, projectbeschrijvingen en blogposts. Hij streamt zijn antwoord, vermeldt bij elke bewering uit welk document die komt, en zegt het als hij iets niet weet.
+
+De regels waar het ontwerp om draait zijn dezelfde die ik aan elk AI-systeem stel:
+
+1. **Geen bron, geen bewering.** Bronvermelding zit ingebakken in het antwoord, en een verwijzing moet naar een bestaand kennisdocument wijzen — anders wordt ze weggelaten.
+2. **Fail closed.** Elke guard, budgetcheck en validatiestap eindigt in een nette weigering, nooit in een crash en nooit in een gok.
+3. **Niets onomkeerbaars zonder mens.** De enige tool die namens mij handelt, zet de agent stil tot ik het goedkeur.
+
+## De opzet
+
+De server is FastAPI met een LangGraph-agent die één chatbeurt orkestreert als een kleine toestandsmachine:
+
+- **Guard input** — deterministische Python, zonder model: een screening op prompt injection, een controle op gevoelige nummerreeksen zodat niemand een kaartnummer in een chat plakt, en een patroonscreening voor duidelijk off-topic verzoeken. Alles vóór er één token is uitgegeven.
+- **Generate** — de enige node die een model aanraakt, via een OpenAI-compatibele client over httpx. De kennisbank zit als gecachete prefix in de systeemprompt, waardoor vervolgbeurten goedkoop zijn; de provider is een configuratieschakelaar (Gemini, OpenAI, DeepSeek, Kimi).
+- **Tools** — een smalle set met strikte schema's: zoeken in de kennisbank, mijn beschikbaarheid melden en een contactbericht opstellen. Maximaal drie toolrondes per beurt.
+- **Request approval** — een contactbericht opstellen is gemarkeerd als hoog risico. De graaf onderbreekt, het verzoek komt duurzaam in een wachtrij die ik via een admin-endpoint goedkeur, en de bezoeker hoort dat het op beoordeling wacht.
+- **Verify** — nacontroles na het antwoord: een lang feitelijk antwoord zonder enige bron wordt gemarkeerd als hallucinatierisico, en de kosten van de beurt gaan naar een dagbudget dat netjes weigert zodra de limiet is bereikt.
+
+De client is een kleine React-app die de server-sent events leest en het antwoord rendert terwijl het binnenstroomt, met de bronnen als chips.
+
+## Dataplatform
+
+Alles wat de agent doet wordt vastgelegd in Postgres: gesprekscheckpoints per thread, de goedkeuringswachtrij, een beurtenlog met kostentelemetrie per bericht (model, tokens, cachehits, kosten, latency), een budgetgrootboek waardoor de daglimiet een herstart overleeft, en een incidentenlog van de guards. Kennisdocumenten worden per kop opgedeeld, gehasht en geëmbed in pgvector; de synchronisatie is incrementeel, dus alleen gewijzigde alinea's worden opnieuw geëmbed en de zoektool rangschikt op cosinusafstand in plaats van termoverlap.
+
+## Kwaliteit wordt gemeten, niet gehoopt
+
+Twee gelabelde datasets draaien tegen de echte agentgraaf: 12 tool-selectiecases (pakt de agent de juiste tool, en nooit een risicovolle die hij niet mag pakken) en 11 taakvoltooiingscases (bevat het antwoord wat het moet bevatten, citeert het wanneer het moet, weigert het wanneer het moet). De grenzen liggen op 95% en 90%; een run daaronder faalt. Een failure-injection-modus laat elk tweede verzoek mislukken om te bewijzen dat de retries van de client dat opvangen. Daarnaast: 58 unit- en integratietests en ruff bij elke push.
+
+## Aandachtspunten
+
+- Rate limiting per bezoeker en strikte requestvalidatie voorkomen dat het publieke endpoint een open portemonnee wordt.
+- Prompt caching en een goedkope standaardprovider houden een dag gesprekken onder een paar dollar — en de limiet garandeert dat.
+- De assistent spreekt *over* mij, nooit *namens* mij: alles wat mijn inbox bereikt, passeert eerst mijn goedkeuring.
+
+## In de repo
+
+- Agentgraaf met getypeerde state, deterministische routering en latency-tracing per node
+- Input- en outputguards, dagbudgetguard, onderbreking voor menselijke goedkeuring
+- Streaming SSE-endpoint met ingebouwde bronvermelding en telemetrie per bericht
+- Postgres-dataplatform: alembic-migraties, checkpointer, goedkeuringswachtrij, beurtenlog, pgvector-zoeken
+- Evaluatiedatasets, runner met drempels en failure injection, CI bij elke push
+
+## Technologie
+
+Python, FastAPI, LangGraph, Postgres + pgvector, React, GitHub Actions

@@ -1,0 +1,220 @@
+/* Photo and timeline are the stage's grid items; on wide screens they share
+   one cell, so the frame is as tall as the photo's aspect ratio or the
+   timeline's content, whichever is more, and the copy never overflows the
+   scrim. Up to tablet width the stage breaks out of the page container to
+   the full viewport width (the section clips the scrollbar's worth of
+   overflow); on desktop it stays inside the container with side borders. */
+.stage {
+  display: grid;
+}
+
+@media (max-width: 1199px) {
+  .stage {
+    margin-inline: calc(50% - 50vw);
+  }
+}
+
+@media (min-width: 1200px) {
+  .frame {
+    border-inline: 1px solid var(--app-border-soft);
+  }
+}
+
+/* The photo's minimum height as a spacer (padding-top % is relative to the
+   frame's width): 4:3 on phones, 16:9 on small tablets, 2:1 from 900px.
+   A spacer rather than `aspect-ratio`, because an aspect-ratio grid item
+   stretched to a taller row would widen itself to keep the ratio; this way
+   the frame keeps the row's width and simply grows taller when the roles
+   need more room than the ratio gives. */
+.frame::before {
+  content: "";
+  display: block;
+  padding-top: 75%;
+}
+
+@media (min-width: 600px) {
+  .frame::before {
+    padding-top: 56.25%;
+  }
+}
+
+@media (min-width: 900px) {
+  .frame::before {
+    padding-top: 50%;
+  }
+}
+
+/* Below the photo on narrow screens, in the theme's colours, back inside
+   the page's side gutters. */
+.timeline {
+  --rail: var(--app-border-soft);
+  --accent: var(--app-red);
+  --ring: var(--app-surface);
+  position: relative;
+  margin-top: 32px;
+  padding-inline: 20px;
+}
+
+@media (min-width: 600px) {
+  .timeline {
+    padding-inline: 32px;
+  }
+}
+
+.period {
+  color: var(--accent);
+}
+
+.org {
+  color: var(--app-text-secondary);
+}
+
+/* From 900px up: laid over the right half of the photo, on a scrim that
+   fades in from the left so the photo stays clear where Ruud stands. */
+@media (min-width: 900px) {
+  .frame {
+    grid-area: 1 / 1;
+  }
+
+  .timeline {
+    --rail: rgba(255, 255, 255, 0.28);
+    --accent: #ffffff;
+    --ring: #0f1f3a;
+    grid-area: 1 / 1;
+    justify-self: end;
+    width: 50%;
+    margin: 0;
+    /* Spacing follows the viewport, so the panel tightens as it narrows. */
+    padding: clamp(32px, 5vw, 64px) clamp(32px, 6vw, 96px)
+      clamp(32px, 5vw, 64px) clamp(48px, 11vw, 160px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: linear-gradient(
+      to right,
+      rgba(11, 25, 48, 0) 0%,
+      rgba(11, 25, 48, 0.82) 24%,
+      rgba(11, 25, 48, 0.92) 100%
+    );
+    color: #ffffff;
+  }
+
+  .role {
+    color: #ffffff;
+  }
+
+  .org {
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .body {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* A step smaller than the theme's sizes, scaling with the viewport, so
+     three roles fit the 2:1 photo at every width. */
+  .timeline .role {
+    font-size: clamp(1rem, 0.6rem + 0.55vw, 1.2rem);
+  }
+
+  .timeline .org {
+    font-size: clamp(0.78rem, 0.6rem + 0.2vw, 0.85rem);
+  }
+
+  .timeline .body {
+    font-size: clamp(0.82rem, 0.6rem + 0.3vw, 0.92rem);
+    line-height: 1.55;
+  }
+
+  .timeline .item + .item {
+    margin-top: clamp(20px, 2.5vw, 34px);
+  }
+}
+
+.list {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 30px;
+}
+
+/* A hairline rail down the left, with an accent fill that draws top to
+   bottom. */
+.rail {
+  position: absolute;
+  left: 4px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--rail);
+}
+
+.railFill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: top;
+}
+
+.item {
+  position: relative;
+}
+
+.item + .item {
+  margin-top: 28px;
+}
+
+/* Below the photo, its own grid row. */
+.cta {
+  margin-top: 24px;
+}
+
+/* A dot on the rail at each role. */
+.dot {
+  position: absolute;
+  left: -30px;
+  top: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+/* Entrance: while the photo is still turning over, the rail is empty and the
+   roles wait off to the right. `.done` draws the rail and slides them in,
+   staggered top to bottom, with the CTA last. */
+@media (prefers-reduced-motion: no-preference) {
+  .pending .railFill {
+    transform: scaleY(0);
+  }
+
+  .pending .item {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+
+  .pending .dot {
+    transform: scale(0);
+  }
+
+  .done .railFill {
+    transform: scaleY(1);
+    transition: transform 1.3s cubic-bezier(0.65, 0, 0.35, 1) 0.1s;
+  }
+
+  .done .item {
+    opacity: 1;
+    transform: translateX(0);
+    transition:
+      opacity 0.6s ease calc(0.15s + var(--i) * 0.28s),
+      transform 0.9s cubic-bezier(0.16, 1, 0.3, 1)
+        calc(0.15s + var(--i) * 0.28s);
+  }
+
+  .done .dot {
+    transform: scale(1);
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)
+      calc(0.25s + var(--i) * 0.28s);
+  }
+}

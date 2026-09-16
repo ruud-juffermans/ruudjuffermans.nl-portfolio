@@ -1,0 +1,87 @@
+---
+title: "Een open-data warehouse zoals het hoort: dbt, tests en een Kimball-sterschema"
+date: "2026-07-26"
+excerpt: "Dashboards falen zelden op de visualisatie en bijna altijd op het fundament eronder. Daarom bouwde ik in de openbaarheid een warehouse op Nederlandse open data — met alles erop en eraan: sterschema, tests in CI en documentatie die niet kán verouderen."
+tags: ["Project", "dbt", "Data Engineering"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+Vraag tien organisaties naar hun dashboardprobleem en negen keer is het geen
+dashboardprobleem. De cijfers kloppen niet met elkaar, niemand weet welke
+definitie waar vandaan komt, en elke wijziging in de bron breekt stilletjes drie
+rapportages. Het echte werk zit onder de visualisatie: een datamodel dat klopt,
+gedocumenteerd is en getest wordt.
+
+Dat werk is lastig te laten zien in een portfolio — het speelt zich normaal
+gesproken af achter de firewall van een opdrachtgever. Daarom heb ik het in de
+openbaarheid nagebouwd, op data die van ons allemaal is:
+**`nl-vehicle-warehouse`**, een end-to-end analyseplatform op Nederlandse
+open data.
+
+## De opzet
+
+De bron is het open-datakenteken­register van de RDW — miljoenen voertuigen,
+vrij beschikbaar, met echte volumes en echte datakwaliteitsproblemen — verrijkt
+met CBS-gegevens per gemeente. De keten:
+
+1. **Ingestie.** Een Python-loader haalt de data incrementeel op en schrijft
+   ruwe bestanden weg. Geen handwerk: opnieuw draaien geeft hetzelfde resultaat.
+2. **Warehouse.** DuckDB als motor — gratis, snel en draaibaar in CI. Het
+   dbt-project is zo opgezet dat dezelfde modellen ook op Snowflake of
+   Databricks landen; alleen de connectie verschilt.
+3. **Transformatie.** dbt in drie lagen: *staging* (schoonmaken en hernoemen),
+   *warehouse* (het sterschema) en *marts* (klaar voor gebruik).
+
+## Kimball, expliciet
+
+Het hart van het project is een dimensioneel model volgens Kimball — en dan
+niet impliciet, maar opgeschreven. Elke feittabel heeft een **grain statement**:
+één zin die vastlegt wat één rij betekent ("één rij per voertuigregistratie").
+Elke dimensie heeft een gedocumenteerde keuze over historie (SCD type 1 of 2)
+en waarom.
+
+Dat klinkt als formaliteit. Het is het verschil tussen een model waar je zes
+maanden later nog op durft te bouwen en een verzameling tabellen waar niemand
+meer aan wil zitten. De cijferdiscussies die ik bij opdrachtgevers tegenkom,
+beginnen vrijwel altijd bij een grain die nooit is vastgelegd.
+
+## Testen als gewoonte, niet als project
+
+Elke wijziging gaat via een pull request, en elke pull request draait de
+volledige keten: linting op SQL en Python, daarna `dbt build` met alle tests —
+uniciteit, verplichte velden, referentiële integriteit tussen feiten en
+dimensies. Rood is rood; er gaat niets mee naar main.
+
+> Een datamodel zonder tests is een belofte. Een datamodel met tests in CI is
+> een afspraak.
+
+De dbt-documentatie met de volledige lineage — van ruwe bron tot mart — wordt
+bij elke wijziging opnieuw gegenereerd, zodat de documentatie per definitie
+niet kan verouderen.
+
+## Het resultaat
+
+Eén `make`-commando bouwt van een lege map een bevraagbaar warehouse: verse
+snapshot van de bron, miljoenen RDW-rijen incrementeel geladen, sterschema
+opgebouwd, alle tests groen. Drie feittabellen met elk een expliciete grain —
+waaronder twee verschillende grains in één schema, precies waar dimensioneel
+modelleren om draait — en een gemeentedimensie met type 2-historie, zodat
+herindelingen historische cijfers niet met terugwerkende kracht verschuiven.
+Elke pull request bewijst in CI dat de hele keten nog klopt, en levert de
+actuele lineage-documentatie als bijproduct mee. Niet een demo die één keer
+werkte, maar een platform dat bij elke wijziging opnieuw bewijst dat het
+werkt.
+
+## Waarom dit relevant is voor jouw organisatie
+
+Alles in dit project is één-op-één toepasbaar op de omgevingen waarin ik werk:
+een stuurinformatievoorziening die betrouwbaar moet zijn, definities die
+vastliggen, wijzigingen die niet stilletjes iets mogen breken. De technologie
+verschilt per organisatie — SAS, Power BI, Databricks, Snowflake — maar de
+discipline is overal dezelfde.
+
+*De volledige code en documentatie staan op [GitHub](https://github.com/datavakwerk/nl-vehicle-warehouse).*
+
+*Benieuwd hoe zo'n fundament er onder jouw rapportages uit zou zien?
+[Plan een kennismaking](mailto:datavakwerk@ruudjuffermans.nl) — dan kijk ik
+graag een keer mee.*

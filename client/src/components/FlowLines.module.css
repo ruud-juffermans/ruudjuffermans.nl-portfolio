@@ -1,0 +1,74 @@
+/* Backdrop layer: fills the relatively positioned wrapper it is dropped into
+   and paints behind every sibling section (it is the first child, and the
+   sections are positioned too, so document order decides). */
+.layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Global dimmer for the whole artwork; per-section visibility is set by the
+     translucency of each section's own background. */
+  opacity: var(--flow-line-opacity, 0.85);
+}
+
+.svg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+
+}
+
+.svg path {
+  fill: none;
+  /* stroke itself is set inline per variant, pointing at that variant's
+     gradient — two variants can share a page without id collisions. */
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: var(--dot);
+  stroke-dashoffset: var(--flow-offset, 0);
+}
+
+/* Variants that set .repeat close the gap between dash trains almost entirely:
+   the rhythm covers the full path from top to bottom at every scroll position,
+   so there is never a bare stretch where a train has "ended". */
+.repeat {
+  --tail: 60px;
+}
+
+/* Each line gets its own dot size and rhythm, so the four strands never
+   travel in lockstep. The long trailing gap keeps most of the path bare. */
+.svg path[data-line="1"] {
+  --dot: 20px;
+  --gap: 50px;
+  stroke-dasharray: var(--dot) var(--gap) 120px var(--gap) var(--dot) var(--gap)
+    300px var(--gap) var(--dot) var(--gap) 150px var(--gap) var(--dot) var(--tail, 20000px);
+}
+
+.svg path[data-line="2"] {
+  --dot: 34px;
+  --gap: 60px;
+  stroke-dasharray: var(--dot) var(--gap) 120px var(--gap) var(--dot) var(--gap)
+    300px var(--gap) var(--dot) var(--gap) 150px var(--gap) var(--dot) var(--tail, 20000px);
+}
+
+.svg path[data-line="3"] {
+  --dot: 25px;
+  --gap: 40px;
+  stroke-dasharray: var(--dot) var(--gap) 120px var(--gap) var(--dot) var(--gap)
+    250px var(--gap) var(--dot) var(--gap) 150px var(--gap) var(--dot) var(--tail, 20000px);
+}
+
+.svg path[data-line="4"] {
+  --dot: 40px;
+  --gap: 70px;
+  stroke-dasharray: var(--dot) var(--gap) 100px var(--gap) var(--dot) var(--gap)
+    200px var(--gap) var(--dot) var(--tail, 20000px);
+}
+
+@media (max-width: 900px) {
+  .layer {
+    opacity: var(--flow-line-opacity-mobile, 0.6);
+  }
+}

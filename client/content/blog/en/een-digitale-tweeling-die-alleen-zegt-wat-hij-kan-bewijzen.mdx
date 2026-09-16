@@ -1,0 +1,88 @@
+---
+title: "A digital twin that only says what it can prove"
+date: "2026-09-11"
+excerpt: "I built an AI agent that answers questions about my work on my behalf. The chat took a day. The other weeks went into everything that makes it safe to leave running: guards without a model, a cost cap that fails closed, human approval before it acts, and evals that gate every change."
+tags: ["Project", "GenAI", "Agents"]
+topic: "ai"
+project: "digital-twin"
+---
+Everyone has seen the demo: a chatbot over "your documents", answering
+convincingly in a slick interface. It takes an afternoon. What it doesn't
+show is what happens on day three, when a visitor pastes "ignore your
+instructions" into it, when someone asks it to write their Python homework
+on your API budget, or when it confidently invents a job you never had.
+
+I wanted to know what it takes to close that gap, so I built one for
+myself: **`digital-twin`**, an agent that answers questions about my work —
+what I built, how I approach a problem, whether I'm open to a role — grounded
+in my CV, project write-ups and blog posts. The chat was the easy part. This
+post is about the rest.
+
+## Rule one: no source, no claim
+
+The model gets my knowledge base in its system prompt and is instructed to
+cite the document every claim comes from. That is the ordinary part. The
+part that matters sits after the model: a citation must name a document
+that actually exists, or it is dropped. And a long, factual-sounding answer
+with zero citations gets flagged as a hallucination risk and logged. The
+model doesn't get to decide whether it was grounded — a few lines of
+deterministic Python do.
+
+Refusal is a first-class outcome. "I don't have that in my knowledge base,
+ask Ruud directly" is a correct answer, and the eval set tests it as
+thoroughly as the answers themselves.
+
+## Rule two: guards run before tokens are spent
+
+The agent is a LangGraph state machine, and the first node touches no
+model at all. It screens the input for prompt-injection markers, for
+sensitive number runs so nobody drops a card number into a chat, and for
+patterns that are obviously off-topic ("write me a script"). Every one of
+those ends in a polite redirect, costs nothing, and can't crash.
+
+The same principle applies to money. Each turn's cost — real numbers from
+the provider's usage report, including cache hits — goes into a daily
+budget. Hit the cap and the agent refuses politely until midnight. The
+ledger lives in Postgres, so a restart doesn't reset the meter. Prompt
+caching does most of the actual saving: the knowledge base is a stable
+prefix, so follow-up turns are mostly cached tokens.
+
+## Rule three: nothing irreversible without a human
+
+The agent has three tools: search the knowledge base, report my
+availability, and draft a contact message. The third one acts on my behalf,
+so it is marked high-risk. When the model reaches for it, the graph
+interrupts: the request goes into a durable approval queue, the visitor is
+told it's waiting for my review, and nothing is sent until I approve it
+through an admin endpoint. The assistant speaks *about* me. It never speaks
+*for* me.
+
+> The question for an agent isn't "can it do this?", but "what happens
+> when it shouldn't have?"
+
+## Quality is measured, not hoped for
+
+"Does it work?" is a vague question for an agent, so it is replaced by two
+labelled datasets that run against the real graph. Twelve tool-selection
+cases check that the agent reaches for the right tool — and never a
+high-risk one it shouldn't. Eleven task-completion cases check that answers
+contain what they must, cite when they must, and refuse when they must.
+Thresholds are 95% and 90%; a run below that fails. A failure-injection
+mode drops every other request, to prove the retries absorb it rather than
+the visitor. Underneath that sit 58 tests and a linter on every push.
+
+## Why this matters for your organisation
+
+Every organisation that wants an assistant on its own knowledge runs into
+exactly these questions — not "which model" but: how do we guarantee
+answers are grounded, how do we stop it from spending or acting without
+oversight, and how do we know a change made it better rather than
+different? Deterministic guards, a budget that fails closed, human approval
+on the risky path, and evals that gate the pipeline transfer one to one.
+
+*The complete code is on [GitHub](https://github.com/datavakwerk/digital-twin);
+the full write-up is in the [project](/en/projects/digital-twin).*
+
+*Thinking about an AI assistant on your organisation's knowledge, without
+the day-three surprises? [Get in touch](/en/contact) — I'm happy to take a
+look with you.*

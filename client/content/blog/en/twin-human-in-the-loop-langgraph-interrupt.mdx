@@ -1,0 +1,294 @@
+---
+title: "A human-in-the-loop agent with LangGraph interrupt()"
+date: "2026-09-13"
+excerpt: "My digital twin has one tool that acts on my behalf: drafting a contact message. It never runs without my decision. This is the mechanism end to end — a graph node that calls interrupt() and checkpoints the thread, an SSE stream that ends with a 'queued for review' notice, and an admin endpoint that resumes the same thread and lets the model finish. With the code on both sides of the pause."
+tags: ["Engineering", "GenAI", "Agents"]
+topic: "ai"
+project: "digital-twin"
+---
+In the [overview of my digital twin](/blog/een-digital-twin-die-alleen-zegt-wat-hij-kan-bewijzen)
+I wrote one paragraph about human approval: when the model reaches for the
+tool that speaks *for* me, the graph pauses and nothing happens until I say
+so. That paragraph hides the most interesting engineering in the project.
+This post is the mechanism, with the actual code on both sides of the pause.
+
+## Why some tools must not run autonomously
+
+The agent has three tools. Two of them are read-only: `search_knowledge`
+and `get_availability`. The third, `draft_contact_message`, records a
+message from a visitor to me. That is the one that can embarrass me, spam
+me, or commit me to something, so it is the one that carries a flag on the
+tool definition itself:
+
+```python
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    description: str
+    parameters: dict[str, Any]
+    run: Callable[..., Any]  # deterministic, side-effect free
+    timeout_s: float = 5.0
+    # High-risk tools never run without an explicit human approval.
+    high_risk: bool = False
+```
+
+```python
+Tool(
+    name="draft_contact_message",
+    description=(
+        "Submit a message from the visitor to Ruud (hiring inquiry, "
+        "collaboration, question). ..."
+        "Requires Ruud's personal approval before it is "
+        "recorded — tell the visitor it was submitted for approval."
+    ),
+    ...
+    high_risk=True,
+),
+```
+
+The point of putting `high_risk` on the `Tool` dataclass rather than in a
+prompt is that the model has no say in it. The prompt tells the model to
+*mention* the approval; the graph *enforces* it.
+
+## `interrupt()` instead of a pending flag
+
+The obvious way to build this is a `pending` flag: the tool call goes into a
+table, the run ends, and a second code path later reads the row, executes
+the tool and calls the model again with a reconstructed history. I have
+built that before. The problem is the reconstruction: everything the
+model had in context at the moment it asked for the tool — the
+conversation, the earlier tool results, the running cost — has to be
+serialised by hand and replayed correctly, and every field I forget is a
+subtle bug on resume.
+
+LangGraph's `interrupt()` does the serialisation for me. The graph is
+compiled with a checkpointer, so every node boundary is persisted per
+`thread_id`. Calling `interrupt(payload)` inside a node stops the run and
+writes the full state to the checkpoint. Resuming the same `thread_id` with
+`Command(resume=value)` makes `interrupt()` return `value` inside the node,
+and the run continues as if nothing had happened. The pending flag becomes
+a property of the checkpoint (`snapshot.interrupts`) instead of a column I
+maintain.
+
+Which checkpointer is behind that matters for durability, and the code is
+explicit about it:
+
+```python
+@asynccontextmanager
+async def _checkpointer(settings: Settings) -> AsyncIterator[BaseCheckpointSaver]:
+    """Postgres checkpoints when DATABASE_URL is set; otherwise threads live
+    only as long as the process (tests, quick bare-metal dev)."""
+    if settings.database_url:
+        async with AsyncPostgresSaver.from_conn_string(settings.database_url) as saver:
+            await saver.setup()  # manages its own tables, outside alembic
+            yield saver
+    else:
+        yield InMemorySaver()
+```
+
+With `DATABASE_URL` set, the paused thread sits in Postgres and survives a
+restart or a redeploy; I can approve it a day later. Without it, the graph
+runs on `InMemorySaver`, and a restart drops every paused thread. The tests
+run in that second mode.
+
+## Pausing: the graph and the visitor's stream
+
+The `generate` node streams the model's turn and, if the model asked for
+tools, puts them in `pending_tools`. The conditional edge after it decides
+what happens next:
+
+```python
+def _high_risk(call: dict[str, Any]) -> bool:
+    tool = tools_by_name.get(call["name"])
+    return tool is not None and tool.high_risk
+
+def route_after_generate(state: AgentState) -> str:
+    pending = state.get("pending_tools") or []
+    if not pending:
+        return "verify"
+    decided = (state.get("approval") or {}).get("decided")
+    if any(_high_risk(call) for call in pending) and not decided:
+        return "request_approval"
+    return "execute_tools"
+```
+
+The `decided` check is what keeps the resumed run from interrupting a
+second time: after the decision lands in `state["approval"]`, the same edge
+routes straight to `execute_tools`. And `guard_input` resets `approval` to
+`None` at the start of every run, so a decision never leaks into the
+visitor's next question.
+
+The node itself is small. The payload passed to `interrupt()` is what I
+will later see in the admin queue; the return value is my decision:
+
+```python
+async def request_approval(state: AgentState) -> AgentState:
+    # interrupt() pauses the graph and checkpoints it; the visitor's
+    # stream ends with a pending notice. When Ruud decides via the admin
+    # endpoint, the graph resumes here and interrupt() returns his decision.
+    decision = interrupt(
+        {
+            "tool_calls": [
+                {"name": call["name"], "input": call["input"]}
+                for call in state.get("pending_tools") or []
+                if _high_risk(call)
+            ],
+            "visitor_message": state["turns"][-1]["content"],
+        }
+    ) or {}
+    approved = bool(decision.get("approved"))
+    logger.info("High-risk action %s by Ruud", "approved" if approved else "rejected")
+    return {"approval": {"decided": True, "approved": approved, "note": decision.get("note")}}
+```
+
+The edges are plain: `request_approval → execute_tools → generate`, so once
+the decision is in, the tool result goes back to the model and the model
+finishes its answer.
+
+On the visitor's side, `astream` simply returns when the graph interrupts.
+The chat endpoint then inspects the thread's state to find out whether the
+run ended because the answer was done or because it was paused:
+
+```python
+async for event in agent.astream({"turns": turns}, config, stream_mode="custom"):
+    ...
+    yield sse(event)
+snapshot = await agent.aget_state(config)
+...
+if snapshot.interrupts:
+    # A high-risk tool paused the graph for Ruud's approval. Queue it
+    # for the admin endpoint (durable with a database) and tell the visitor.
+    outcome = "pending_approval"
+    await app_state.approvals.add(thread_id, snapshot.interrupts[0].value or {})
+    yield sse({"type": "text", "text": APPROVAL_NOTICE})
+    yield sse({"type": "approval", "status": "pending"})
+```
+
+```python
+APPROVAL_NOTICE = (
+    "\n\nThis request needs Ruud's personal approval — it has been queued for his review."
+)
+```
+
+Two things happen here. The interrupt payload is copied into an approval
+queue (`PostgresApprovalStore` with a database, `InMemoryApprovalStore`
+without), which exists so the admin side can *list* what is waiting; the
+checkpoint remains the source of truth. And the visitor's stream ends with
+three events: a `text` event carrying the notice, an
+`approval` event with `status: "pending"`, and the usual `done`. The
+browser client only renders `text` events, so what the visitor actually sees
+is the notice appended to whatever the model had already said. With a
+database configured, the turn is logged with outcome `pending_approval`.
+
+![The full round trip, with the pause in the middle: the thread is checkpointed at interrupt() and resumed by the admin endpoint](/images/projects/digital-twin/digital-twin-3-goedkeuringsflow.svg "The full round trip, with the pause in the middle: the thread is checkpointed at interrupt() and resumed by the admin endpoint.")
+
+## Resuming: the admin endpoint and fail-closed execution
+
+The admin router is protected by a bearer token; with no `ADMIN_TOKEN`
+configured the endpoints are simply off (403). The resume endpoint is one
+function:
+
+```python
+@router.post("/approvals/{thread_id}")
+async def decide_approval(
+    request: Request, decision: ApprovalDecision, thread_id: str = THREAD_ID
+) -> Any:
+    if (denied := _unauthorized(request)) is not None:
+        return denied
+
+    agent = request.app.state.agent
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshot = await agent.aget_state(config)
+    if not snapshot.interrupts:
+        return JSONResponse(
+            status_code=404, content={"error": "No pending approval for this thread."}
+        )
+
+    pending = await request.app.state.approvals.get(thread_id)
+
+    # Resume from the checkpoint; interrupt() in the graph returns this value.
+    resume = Command(resume={"approved": decision.approved, "note": decision.note})
+    answer: list[str] = []
+    async for event in agent.astream(resume, config, stream_mode="custom"):
+        if event.get("type") == "text":
+            answer.append(event["text"])
+    ...
+    await request.app.state.approvals.remove(thread_id)
+    status = "approved" if decision.approved else "rejected"
+    logger.info("Approval %s for thread %s", status, thread_id)
+    return {"status": status, "thread_id": thread_id, "answer": "".join(answer)}
+```
+
+Note what the 404 is keyed on: `snapshot.interrupts`, the checkpoint, not
+the queue. A thread that isn't actually paused cannot be "approved" into
+running something. The `Command(resume=...)` value is exactly the dict that
+`interrupt()` returns inside `request_approval`. The same `astream` call
+then runs `execute_tools` and the final `generate`, and the model's closing
+text comes back in the admin response as `answer` and lands in the thread
+state. Nothing pushes it to the visitor's browser: that SSE connection
+closed when the notice went out.
+
+The fail-closed part lives in `execute_tools`, and it is deliberately not
+"if rejected, skip":
+
+```python
+if tool.high_risk and not approval.get("approved"):
+    # Fail closed: without an explicit approval the action never runs.
+    detail = {
+        "status": "declined",
+        "reason": approval.get("note") or "Ruud declined this request.",
+    }
+    results.append(_tool_message(call, json.dumps(detail)))
+    continue
+if tool.high_risk:
+    drafts.append({"tool": name, "input": call["input"]})
+```
+
+The condition is `not approval.get("approved")`. An empty `approval`, a
+missing key, a `None`, a resume payload without the field: all of them
+decline. Only an explicit `approved: True` reaches the `run`. The declined
+result goes back to the model as a normal tool message, so the model can
+tell the visitor honestly that the request was not passed on, with my note
+as the reason if I gave one. Approved drafts are additionally appended to
+`contact_drafts`, which is checkpointed for the thread's lifetime, and the
+admin endpoint archives them into the `contact_messages` table when a
+database is present.
+
+![No approval and a refused approval take the same path — the tool does not run, and the model is told why](/images/blog/twin-human-in-the-loop-langgraph-interrupt/twin-execute-tools-fail-closed.svg "No approval and a refused approval take the same path — the tool does not run, and the model is told why.")
+
+## What the tests pin down
+
+`server/tests/test_approvals.py` drives the whole path through FastAPI's
+`TestClient` with a fake chat-completions backend that answers the first
+request with a `draft_contact_message` tool call and the second with plain
+text. The helper that starts a paused thread asserts the shape of the pause:
+
+```python
+events = parse_events(response.text)
+assert {"type": "approval", "status": "pending"} in events
+assert any(e.get("text") == APPROVAL_NOTICE for e in events)
+assert recorder.calls == 1  # paused before any execution or second model call
+```
+
+That last line is the one I care about most: exactly one model call
+happened before the pause. Then five tests cover the two sides:
+
+- `test_high_risk_tool_pauses_and_lists_pending` — `GET /api/admin/approvals` lists the thread with the tool call input and the visitor's message.
+- `test_approving_resumes_executes_and_records_draft` — after `POST /api/admin/approvals/t-approve` with `{"approved": true}`, the queue is empty, the second model request carries a tool message containing `"recorded"`, the response `answer` is the model's final text, and `contact_drafts` in the thread state holds the draft. `recorder.calls == 2`.
+- `test_rejecting_declines_without_executing` — with `{"approved": false, "note": "Not taking projects right now."}`, the tool message contains `"declined"` and my note verbatim.
+- `test_admin_endpoints_require_token` — no token and a wrong token both get 401; a valid token on a thread with nothing pending gets 404.
+- `test_admin_endpoints_disabled_without_token` — with `ADMIN_TOKEN` empty, the endpoints return 403.
+
+What is *not* tested: durability across a process restart. The tests run
+without `DATABASE_URL`, so they exercise `InMemorySaver` and
+`InMemoryApprovalStore`. The Postgres path is the same code with a different
+saver, but I have no automated proof that a paused thread survives a
+restart; that is something I verify by hand on the deployed instance.
+
+## Takeaways
+
+- Put the risk flag on the tool object, not in the prompt. `high_risk=True` is read by the router and the executor; the model only gets told to mention it.
+- `interrupt()` turns "pending" into a property of the checkpoint. There is no history to reconstruct on resume, and the admin endpoint refuses to resume anything that `snapshot.interrupts` doesn't say is paused.
+- Fail closed by testing for the positive: `not approval.get("approved")` declines every state except an explicit `True`.
+- Return the decline to the model as a tool result. It can then say what actually happened instead of pretending the message went out.
+- Be honest about what the checkpointer is. In-memory means every paused thread dies with the process; the tests run that way, production doesn't.

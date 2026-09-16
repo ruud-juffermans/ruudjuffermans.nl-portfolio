@@ -1,0 +1,325 @@
+---
+title: "No source, no answer: enforcing citations in code, not in the prompt"
+date: "2026-09-13"
+excerpt: "My RAG system over Dutch court rulings tells the model to cite every claim. I don't trust it to. After generation every line is parsed and checked against the passages that were actually supplied; what fails is rejected and shown to the user, not hidden. That makes source correctness a design property, and turns the honest metric into something else."
+tags: ["Engineering", "GenAI", "RAG"]
+topic: "ai"
+project: "strafrecht-rag"
+---
+The system prompt of `strafrecht-rag` contains this rule, in Dutch: *end every
+line with the numbers of the passages it rests on, like `[1]` or `[2][4]`; a
+line without a reference is thrown away*. It's a good rule. It is also worth
+exactly nothing on its own, because the model reads it as a suggestion and I
+need it as a guarantee.
+
+This post is about the 37 lines that turn the suggestion into a guarantee:
+`verify()` in `src/strafrecht_rag/query/generator.py`. If you haven't read the
+[overview of the project](/blog/rag-over-rechterlijke-uitspraken), the short
+version is: Dutch criminal-law rulings from Rechtspraak.nl, hybrid retrieval,
+a local LLM, and one rule — every claim in an answer must point at a passage
+that was actually handed to the model. An ECLI (European Case Law Identifier,
+e.g. `ECLI:NL:HR:2023:284`) is the public id of a ruling, which is what makes
+a fabricated reference so easy to spot and so damaging.
+
+## Why the prompt is not the guarantee
+
+The prompt already asks for everything I want. It numbers the passages, forbids
+outside knowledge, forbids ECLIs that don't appear in the passages, allows the
+model to answer with a single token when the passages don't help, and caps the
+answer at six lines:
+
+```python
+SYSTEM_PROMPT = """Je bent een juridisch zoekassistent voor Nederlandse strafrechtelijke uitspraken.
+...
+3. Eindig ELKE regel met de nummers van de passages waarop die regel steunt, zoals [1] of [2][4].
+   Een regel zonder verwijzing wordt weggegooid.
+4. Noem geen ECLI-nummers die niet in de passages staan.
+5. Als de passages de vraag niet beantwoorden, antwoord dan met precies één woord: GEEN_BRON
+...
+7. Maximaal 6 regels; herhaal een bewering niet.
+
+Vorm van elke regel: <één feitelijke bewering uit de passages> [<passagenummer>]
+Bijvoorbeeld: <bewering> [2] of <bewering> [1][3]. Herhaal dit voorbeeld niet letterlijk."""
+```
+
+Three things go wrong in practice, and with a small local model
+(`ollama/llama3.2` by default) they go wrong regularly. The model writes a
+sentence and forgets the marker. It writes `[7]` when it was given four
+passages. Or it mentions an ECLI it half-remembers from pretraining, next to a
+perfectly valid `[1]`. None of these are visible if you print the raw output
+and call it an answer. All of them are visible if you parse the output and
+check each line against the passages you supplied. So that's what happens.
+
+## A claim is a line, and a line is parsed
+
+The unit of verification is the *claim* (`Bewering` in the code, which is
+Dutch for "claim"). A claim is one line of the raw output, minus its bullet
+prefix, minus its markers. Three regexes define the grammar:
+
+```python
+MARKER_RE = re.compile(r"\[(\d+(?:\s*[,;]\s*\d+)*)\]")
+ECLI_RE = re.compile(r"ECLI:[A-Z]{2}:[A-Z0-9]+:\d{4}:[A-Z0-9.]+")
+BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+NO_SOURCE_TOKEN = "GEEN_BRON"
+```
+
+`_claims` splits the raw text into candidate lines and drops anything without
+a letter in it, because blank lines and a stray `.` are not claims:
+
+```python
+def _claims(raw: str) -> Iterator[str]:
+    for line in raw.splitlines():
+        line = BULLET_RE.sub("", line).strip()
+        if any(ch.isalpha() for ch in line):  # blank lines and stray punctuation are not claims
+            yield line
+```
+
+`_split_markers` pulls the passage numbers out of a line and returns the clean
+sentence next to them. It is deliberately forgiving about *format*: `[1, 2]`,
+`[3];[1]` and `[1][1]` all parse, and the numbers are de-duplicated in order.
+Being strict about format would reject claims for the wrong reason.
+
+```python
+def _split_markers(text: str) -> tuple[str, list[int]]:
+    numbers: list[int] = []
+    for group in MARKER_RE.findall(text):
+        numbers.extend(int(x) for x in re.split(r"\s*[,;]\s*", group))
+    clean = MARKER_RE.sub("", text)
+    clean = re.sub(r"\s+", " ", clean).strip(" .:;,") + "."
+    return clean, list(dict.fromkeys(numbers))
+```
+
+What I am *not* forgiving about is content, and that's the next section.
+
+## Three ways to get rejected
+
+`verify()` takes the raw output and the list of `Hit`s (the passages, in the
+order they were numbered in the prompt) and returns a `Verificatie`: the
+accepted claims, the rejected ones (`Afgekeurd`, "rejected") with a reason,
+whether the model declared no source, and how many duplicates were merged.
+
+```python
+def verify(raw: str, hits: list[Hit]) -> Verificatie:
+    """Check every claim against the supplied passages; reject what cannot be traced."""
+    if raw.strip().upper().rstrip(".") == NO_SOURCE_TOKEN:
+        return Verificatie([], [], geen_bron=True)
+    allowed_eclis = {h.ecli for h in hits}
+    beweringen: list[Bewering] = []
+    afgekeurd: list[Afgekeurd] = []
+    duplicaten = 0
+    for claim in _claims(raw):
+        if claim.upper().rstrip(".") == NO_SOURCE_TOKEN:
+            continue
+        tekst, numbers = _split_markers(claim)
+        if not numbers:
+            afgekeurd.append(Afgekeurd(tekst, "geen verwijzing naar een passage"))
+            continue
+        invalid = [n for n in numbers if not 1 <= n <= len(hits)]
+        if invalid:
+            afgekeurd.append(
+                Afgekeurd(tekst, f"verwijzing naar niet-aangeleverde passage {invalid}")
+            )
+            continue
+        unknown = sorted(set(ECLI_RE.findall(tekst)) - allowed_eclis)
+        if unknown:
+            afgekeurd.append(Afgekeurd(tekst, f"ECLI niet in de passages: {', '.join(unknown)}"))
+            continue
+        if len(tekst) < 4:
+            afgekeurd.append(Afgekeurd(tekst, "lege bewering"))
+            continue
+        refs = [Verwijzing.from_hit(n, hits[n - 1]) for n in numbers]
+        earlier = next((b for b in beweringen if _key(b.tekst) == _key(tekst)), None)
+        if earlier is not None:  # same claim again: keep it once, merge its references
+            duplicaten += 1
+            merged = list(earlier.verwijzingen) + [r for r in refs if r not in earlier.verwijzingen]
+            beweringen[beweringen.index(earlier)] = Bewering(earlier.tekst, merged)
+            continue
+        beweringen.append(Bewering(tekst, refs))
+    return Verificatie(beweringen, afgekeurd, duplicaten=duplicaten)
+```
+
+The three rejections that matter, in the order they are checked:
+
+1. **No marker at all** — `"geen verwijzing naar een passage"` (no reference
+   to a passage). The sentence may well be true. It is untraceable, so it goes.
+2. **A marker outside `1..len(hits)`** — `"verwijzing naar niet-aangeleverde
+   passage [9]"` (reference to a passage that was not supplied). The model
+   cited something it never saw.
+3. **An ECLI in the text that isn't one of the supplied passages' ECLIs** —
+   `"ECLI niet in de passages: ..."`. This is the classic hallucination: a
+   valid marker *and* a made-up case number in the same sentence. The marker
+   doesn't save it.
+
+There is a fourth, boring guard (`"lege bewering"`, an empty claim of fewer
+than four characters after stripping), which mostly catches lines that were
+only markers.
+
+Two more things happen here that aren't rejections. Small models loop: they
+restate the same claim with a different marker, three times in a row. Instead
+of showing three identical lines, the claim is kept once and its references
+are merged, and the count is reported as `duplicaten`. And a `GEEN_BRON` line
+in the middle of an otherwise real answer is simply skipped; only a *whole*
+answer of `GEEN_BRON` is treated as the model declaring no source.
+
+Then the retry. If nothing survives at all — no claims, no `GEEN_BRON` — the
+generator asks once more, with a reminder appended to the user prompt. Once,
+not in a loop; if the second attempt also fails, the answer has status
+`afgekeurd` with every reason listed.
+
+```python
+    def generate(self, vraag: str, retrieval: Retrieval) -> str:
+        """One call; if nothing survives verification, one retry with a format reminder.
+        ...
+        """
+        raw = self.llm.complete(SYSTEM_PROMPT, build_prompt(vraag, retrieval.hits))
+        verified = verify(raw, retrieval.hits)
+        if verified.beweringen or verified.geen_bron:
+            return raw
+        prompt = build_prompt(vraag, retrieval.hits) + RETRY_REMINDER
+        return self.llm.complete(SYSTEM_PROMPT, prompt)
+```
+
+![Four checks per claim, four named rejections, and one retry — every exit is something the user can see](/images/blog/rag-citations-enforced-in-code/rag-citations-1-raw-to-verified.svg "Four checks per claim, four named rejections, and one retry — every exit is something the user can see.")
+
+## Rejections are shown, not hidden
+
+The tempting alternative is to silently drop rejected lines and present the
+survivors as *the* answer. It looks cleaner. It is also a small lie, because
+the user can no longer tell whether the model was on the rails or whether the
+verifier saved them three times.
+
+So the `Antwoord` ("answer") object carries both lists, and its status is
+derived from them:
+
+```python
+@dataclass(frozen=True)
+class Antwoord:
+    vraag: str
+    beweringen: list[Bewering]
+    afgekeurd: list[Afgekeurd]
+    passages: list[Hit]
+    llm: str
+    ruw: str = ""  # the model's raw output, kept for the eval and for transparency
+    duplicaten: int = 0  # repeated claims collapsed by verification
+    ...
+    @property
+    def status(self) -> str:
+        return "ok" if self.beweringen else "afgekeurd"
+```
+
+The raw output (`ruw`) is kept too, so `ask --json` and the evaluation can
+always show what the model really said. In the terminal, the verification
+block under each answer prints the accepted count, the number of merged
+duplicates, and every rejected claim with its reason and the first 70
+characters of the offending text:
+
+```python
+    if n_bad:
+        text.append(f"\n✘ {n_bad} afgekeurd", style=f"bold {RED}")
+        for a in antwoord.afgekeurd:
+            text.append(f"\n   {a.reden}", style=RED)
+            text.append(f"  «{a.tekst[:70]}{'…' if len(a.tekst) > 70 else ''}»", style=MUTED)
+```
+
+A lawyer reading that sees two things at once: the claims they can click
+through to the exact section and paragraph, and the claims the model wanted
+to make but couldn't back up. The second list is not noise. It's the single
+most honest signal about the model you're using.
+
+## Two fake models that lie on purpose
+
+Because the LLM sits behind a one-method interface (`complete(system, user)
+-> str`), the tests don't need a model. `FakeLLM` returns a scripted string,
+and the scripts are chosen to be exactly the failures verification exists
+for. One invents an ECLI next to a valid marker:
+
+```python
+def test_invented_ecli_is_rejected(store, embedder):
+    gen = _generator(
+        store,
+        embedder,
+        "Zie ook ECLI:NL:HR:2019:9999 over verduistering [1]\n"
+        "De penningmeester verduisterde geld [1]",
+    )
+    result = gen.answer(VRAAG)
+    assert isinstance(result, Antwoord)
+    assert len(result.beweringen) == 1
+    assert len(result.afgekeurd) == 1
+    assert "ECLI:NL:HR:2019:9999" in result.afgekeurd[0].reden
+```
+
+One omits the reference entirely:
+
+```python
+def test_claim_without_reference_is_rejected(store, embedder):
+    gen = _generator(store, embedder, "Dit is een bewering zonder bron.\nMet bron [1]")
+    result = gen.answer(VRAAG)
+    assert isinstance(result, Antwoord)
+    assert [b.tekst for b in result.beweringen] == ["Met bron."]
+    assert result.afgekeurd[0].reden == "geen verwijzing naar een passage"
+```
+
+There are siblings for the other paths: `[9]` against three passages ends in
+status `afgekeurd`, a looping model gets `duplicaten == 2` with merged
+references, and a two-shot fake proves the retry fires exactly once and the
+second prompt contains the reminder
+(`test_generator_retries_once_when_nothing_survives`). The whole suite runs
+with no network, no model download and no LLM, which is the only reason it
+runs in CI at all.
+
+## What this does to the numbers
+
+Here is the part that took me a while to articulate. The evaluation set has 15
+questions, 12 answerable and 3 that must hit the no-source path, and the
+report computes two generation metrics that sound similar and are not:
+
+```python
+    @property
+    def bronjuistheid(self) -> float:
+        """Share of answers whose every cited ECLI is one of the retrieved passages."""
+        answered = [r for r in self.answerable if r.cited_eclis]
+        return self._mean([1.0 if r.cited_in_passages else 0.0 for r in answered])
+
+    @property
+    def claim_acceptance(self) -> float:
+        raw = sum(r.claims_raw for r in self.answerable)
+        return sum(r.claims_ok for r in self.answerable) / raw if raw else 0.0
+```
+
+*Source correctness* (`bronjuistheid`) is 100 % in the committed eval run
+with `ollama/llama3.2`. That number is not an achievement. It is a
+consequence of the code above: a claim with an unknown ECLI never becomes part
+of an `Antwoord`, so the set of cited ECLIs can't contain one. If that metric
+ever drops below 100 %, verification has a bug; it can't tell me anything
+about the model.
+
+*Claim acceptance* can. It counts every line the model produced, before
+verification, and asks how many survived. In the same run that is 89 %: across
+the 12 answered questions the model wrote 28 claims and 3 were rejected. That
+is the honest number, and it is the one that moves when I swap the model,
+tighten the prompt, or change how many passages I supply. There is a test
+that pins the two apart, with a fake that emits one good claim, one invented
+ECLI and one bare sentence:
+
+```python
+def test_hallucinating_llm_lowers_claim_acceptance_but_not_source_correctness(store, embedder):
+    llm = FakeLLM("Echte bewering [1]\nVerzonnen ECLI:NL:HR:1999:1 [1]\nZonder bron")
+    gen = Generator(Retriever(store, embedder, k=4, threshold=0.2), llm)
+    report = evaluate(gen, VRAGEN, k=4)
+    assert report.claim_acceptance == 1 / 3
+    assert report.bronjuistheid == 1.0  # rejected claims never make it into the answer
+```
+
+![Where you measure decides what you learn: one number is fixed by construction, the other tracks the model](/images/blog/rag-citations-enforced-in-code/rag-citations-2-two-metrics.svg "Where you measure decides what you learn: one number is fixed by construction, the other tracks the model.")
+
+Takeaways, briefly:
+
+- A prompt instruction is a request. If a property has to hold, check it in
+  code after generation, against the exact inputs you gave the model.
+- Parse the output into units you can judge one at a time. A line with a
+  marker is checkable; a paragraph is not.
+- Report what you reject. Hiding it makes the answer look better and the
+  system less trustworthy.
+- Know which of your metrics are design properties and which are
+  measurements. Celebrate the second kind, and treat the first kind as a
+  test that must never fail.

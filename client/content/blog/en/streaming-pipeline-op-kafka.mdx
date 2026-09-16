@@ -1,0 +1,92 @@
+---
+title: "Real-time transit delays on Kafka: a streaming pipeline that runs 24 hours unattended"
+date: "2026-08-10"
+excerpt: "Batch pipelines answer yesterday's questions. For the question 'where are things stuck right now?' I built a streaming pipeline on the real-time positions of Dutch public transport — with Kafka, five-minute windows, a dead-letter queue and a live delay map."
+tags: ["Project", "Kafka", "Streaming"]
+topic: "data-engineering"
+project: "ov-streaming-pipeline"
+---
+Most data platforms run in batch, and usually that's fine: reports about
+yesterday don't need seconds. But some questions expire while you're
+answering them. "Which lines are delayed *right now*, and how badly?" is
+worthless if the answer comes from last night's run.
+
+Streaming answers that question — and simultaneously introduces exactly the
+problems batch pipelines never have to face: messages that arrive late,
+messages that arrive twice, messages that can't be parsed, and processing
+that can never "just rerun" because the source doesn't wait. If you say
+streaming, you should be able to point at those four problems in your
+design. That's why I built **`ov-streaming-pipeline`**: a streaming pipeline
+on the real-time vehicle positions of Dutch public transport.
+
+## The problem, concretely
+
+The NDOV/OVapi feed delivers thousands of messages per minute: vehicle
+positions and arrival predictions for trains and buses, nationwide. A public
+feed is also, frankly, messy — unparseable messages are a certainty, not an
+exception. The assignment I set myself: turn that stream into reliable delay
+figures per line and per station, show them live on a map, and have the
+whole thing run unattended for a full day without anything falling over or
+silently miscounting.
+
+## The fix
+
+The chain: a Python producer reads the feed and publishes to Kafka topics
+(Redpanda as the broker). A stream processor computes, per five-minute
+window, the number of measurements, the mean delay, the P90 and the maximum —
+per line and per station. The aggregates land in Postgres, and a Streamlit
+dashboard redraws a map from them every ten seconds. Everything starts with
+one command: `make up`.
+
+The code isn't the interesting part; the choices underneath it are.
+
+- **Idempotent processing.** The consumer commits its offset only after the
+  upsert into Postgres, and the upsert key is (window, dimension).
+  Redelivery therefore can never double-count a finalized window — the
+  standard question about at-least-once processing, answered in code and in
+  a test.
+- **Dead-letter queue.** Messages that fail the parser don't vanish and
+  don't block anything: they land in a dedicated topic with error metadata,
+  show up in Grafana, and after a parser fix `make replay-dlq` reprocesses
+  them.
+- **Raw archive before processing.** Every message is archived unmodified to
+  object storage before anything touches it. If processing goes wrong,
+  there's always a replay path from the source — the same reflex as a
+  raw-data layer in a warehouse.
+- **Late events as policy, not as surprise.** A window waits a fixed
+  tolerance for stragglers; whatever arrives later is counted as a metric
+  and deliberately dropped. A trade-off you document, not one you hide.
+- **Schema evolution.** Every event carries a schema version; the parser
+  supports the current one and the previous one. How a next version rolls
+  out without breaking the pipeline is written down in the README.
+
+## The result
+
+The bar was set in advance, and it was cleared: a clean clone starts the
+full stack with one command, and the pipeline survived a **continuous
+24-hour run** at nationwide feed volume — no intervention, with consumer lag
+that stayed bounded instead of climbing steadily. The measured throughput is
+in the README, next to the Grafana charts of the run. A test proves that
+duplicate delivery cannot pollute the figures, and the DLQ path is
+demonstrated end to end, from broken message to reprocessing. On the map:
+current delays, at most half an hour after the train picks them up — usually
+within the minute.
+
+> Streaming isn't faster batch. It's a different contract: failures are
+> permanent unless you built a path for them in advance.
+
+## Why this matters for your organisation
+
+Few organisations need a Kafka cluster today. But the discipline behind this
+— handling failures explicitly, making processing idempotent, measuring
+everything — is the same discipline that makes a nightly batch chain
+reliable. And when the question *does* become real-time, the difference
+between a demo and a system is exactly what this project shows: the
+dead-letter queue, the redelivery test, the full day running unattended.
+
+*The complete code, the measured throughput and a screen recording of the
+live dashboard are on [GitHub](https://github.com/datavakwerk/ov-streaming-pipeline).*
+
+*Is there a question at your organisation that really can't wait until
+tomorrow? [Book an intro call](mailto:datavakwerk@ruudjuffermans.nl) — I'm
+happy to take a look with you.*

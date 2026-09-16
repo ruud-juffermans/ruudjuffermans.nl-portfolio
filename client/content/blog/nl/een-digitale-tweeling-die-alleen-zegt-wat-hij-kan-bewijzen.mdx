@@ -1,0 +1,92 @@
+---
+title: "Een AI digital twin die alleen zegt wat hij kan bewijzen"
+date: "2026-09-11"
+excerpt: "Ik bouwde een AI-agent die namens mij vragen over mijn werk beantwoordt. De chat kostte een dag. De weken daarna gingen naar alles wat het veilig maakt om hem te laten draaien: guards zonder model, een kostenlimiet die fail closed is, human-in-the-loop voordat hij handelt, en evaluaties die elke wijziging bewaken."
+tags: ["Project", "GenAI", "Agents"]
+topic: "ai"
+project: "digital-twin"
+---
+Iedereen kent de demo: een chatbot over "jouw documenten", die overtuigend
+antwoordt in een strakke interface. Dat kost een middag. Wat de demo niet
+laat zien is wat er op dag drie gebeurt, als een bezoeker "negeer je
+instructies" intypt, als iemand hem zijn Python-huiswerk laat schrijven op
+jouw API-budget, of als hij vol overtuiging een baan verzint die je nooit
+had.
+
+Ik wilde weten wat er nodig is om dat gat te dichten, dus bouwde ik er een
+voor mezelf: **`digital-twin`**, een agent die vragen over mijn werk
+beantwoordt — wat ik bouwde, hoe ik een probleem aanpak, of ik openstaat
+voor een rol — op basis van mijn cv, projectbeschrijvingen en blogposts. De
+chat was het makkelijke deel. Dit stuk gaat over de rest.
+
+## Regel één: geen bron, geen bewering
+
+Het model krijgt mijn kennisbank in de systeemprompt en de instructie om bij
+elke bewering het document te noemen waar die vandaan komt. Dat is het
+gewone deel. Het deel dat ertoe doet zit ná het model: een verwijzing moet
+naar een document wijzen dat echt bestaat, anders wordt ze weggelaten. En
+een lang, feitelijk klinkend antwoord zonder enige bron wordt gemarkeerd als
+hallucinatierisico en gelogd. Het model bepaalt niet zelf of het onderbouwd
+was — een paar regels deterministische Python doen dat.
+
+Weigeren is een volwaardige uitkomst. "Dat staat niet in mijn kennisbank,
+vraag het Ruud direct" is een correct antwoord, en de evaluatieset test dat
+net zo grondig als de antwoorden zelf.
+
+## Regel twee: guards draaien vóór er tokens worden uitgegeven
+
+De agent is een LangGraph-toestandsmachine, en de eerste node raakt geen
+model aan. Hij screent de invoer op prompt-injection-markers, op gevoelige
+nummerreeksen zodat niemand een kaartnummer in een chat plakt, en op
+patronen die overduidelijk off-topic zijn ("schrijf een script voor me").
+Elk daarvan eindigt in een nette omleiding, kost niets en kan niet crashen.
+
+Hetzelfde principe geldt voor geld. De kosten van elke beurt — echte
+getallen uit het gebruiksrapport van de provider, inclusief cachehits — gaan
+naar een dagbudget. Is de limiet bereikt, dan weigert de agent netjes tot
+middernacht. Het grootboek staat in Postgres, dus een herstart zet de meter
+niet op nul. Prompt caching doet het eigenlijke besparen: de kennisbank is
+een stabiele prefix, waardoor vervolgbeurten grotendeels uit gecachete
+tokens bestaan.
+
+## Regel drie: niets onomkeerbaars zonder mens
+
+De agent heeft drie tools: zoeken in de kennisbank, mijn beschikbaarheid
+melden en een contactbericht opstellen. Die derde handelt namens mij, en is
+daarom gemarkeerd als hoog risico. Grijpt het model ernaar, dan onderbreekt
+de graaf: het verzoek gaat een duurzame goedkeuringswachtrij in, de bezoeker
+hoort dat het op mijn beoordeling wacht, en er wordt niets verstuurd tot ik
+het via een admin-endpoint goedkeur. De assistent spreekt *over* mij. Hij
+spreekt nooit *namens* mij.
+
+> De vraag bij een agent is niet "kan hij dit?", maar "wat gebeurt er als
+> hij het niet had moeten doen?"
+
+## Kwaliteit wordt gemeten, niet gehoopt
+
+"Werkt het?" is bij een agent een vage vraag, dus die is vervangen door twee
+gelabelde datasets die tegen de echte graaf draaien. Twaalf
+tool-selectiecases controleren dat de agent de juiste tool pakt — en nooit
+een risicovolle die hij niet mag pakken. Elf taakvoltooiingscases
+controleren dat antwoorden bevatten wat ze moeten bevatten, citeren wanneer
+het moet en weigeren wanneer het moet. De grenzen liggen op 95% en 90%; een
+run daaronder faalt. Een failure-injection-modus laat elk tweede verzoek
+mislukken, om te bewijzen dat de retries dat opvangen in plaats van de
+bezoeker. Daaronder liggen 58 tests en een linter bij elke push.
+
+## Waarom dit ertoe doet voor jouw organisatie
+
+Elke organisatie die een assistent op haar eigen kennis wil, loopt tegen
+precies deze vragen aan — niet "welk model", maar: hoe garanderen we dat
+antwoorden onderbouwd zijn, hoe voorkomen we dat hij zonder toezicht geld
+uitgeeft of handelt, en hoe weten we dat een wijziging het beter maakte in
+plaats van anders? Deterministische guards, een budget dat fail closed is,
+menselijke goedkeuring op het risicovolle pad en evaluaties die de pipeline
+bewaken zijn één op één overdraagbaar.
+
+*De volledige code staat op [GitHub](https://github.com/datavakwerk/digital-twin);
+de uitgebreide beschrijving in het [project](/projecten/digital-twin).*
+
+*Denk je aan een AI-assistent op de kennis van jouw organisatie, zonder de
+verrassingen van dag drie? [Neem contact op](/contact) — ik kijk graag met
+je mee.*

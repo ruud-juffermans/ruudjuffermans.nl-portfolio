@@ -1,0 +1,245 @@
+---
+title: "The offset ledger: never commit past an open window"
+date: "2026-09-13"
+excerpt: "A windowed Kafka consumer with auto-commit will, sooner or later, commit a message whose window is still open and then lose part of that window in a crash. This post walks through the two pieces that close that hole in my transit pipeline: an idempotent Postgres upsert and a small per-partition ledger that decides which offset is actually safe to commit."
+tags: ["Engineering", "Kafka", "Streaming"]
+topic: "data-engineering"
+project: "ov-streaming-pipeline"
+---
+Every Kafka tutorial has the same paragraph about delivery guarantees: at-most-once, at-least-once, exactly-once, pick one. What it skips is that "at-least-once" only means what you think it means if you commit at the right moment. In a consumer that aggregates over time windows, the right moment is not "after I read the message" or even "after I processed it". It is "after the window this message belongs to has been written". Those can be seven minutes apart.
+
+In `ov-streaming-pipeline` the processor reads vehicle positions and arrival predictions for Dutch public transport from Redpanda, computes 5-minute tumbling windows (count, mean, P90, max, min per line, station, operator and network) and upserts them into Postgres. This post is about the two things that make redelivery harmless there: the upsert, and the ledger that decides which offset to commit. Neither is more than a screen of code.
+
+## What auto-commit gets wrong in a windowed consumer
+
+Take one message: an arrival prediction with an event time of 12:03, so it belongs to the window `[12:00, 12:05)`. The processor reads it and adds the delay to the running aggregate of that window. The window does not close at 12:05, though. The watermark is `min over active partitions of (max event time seen) − 120 s`, so the window is finalized only when the stream has moved past 12:07. That is the "after ~7 min" in the README: 5 minutes of window plus 2 minutes of allowed lateness.
+
+With `enable.auto.commit` on, the client commits the consumed position on a timer, regardless of what the application has done with those messages. So shortly after reading the 12:03 message, the offset one past it is committed. Now the process dies at 12:04. On restart the consumer resumes from the committed offset, the 12:03 message is never delivered again, the window `[12:00, 12:05)` closes with one observation fewer, and the row in `delay_aggregates` is quietly wrong. No error, no metric, no replay path from Kafka, because Kafka thinks that message was handled.
+
+The failure is small per message and invisible per window. With 6 994 windows open at once in the morning peak, an unclean restart under auto-commit would leave a smear of undercounted rows that nothing would ever flag.
+
+![The same crash, twice: auto-commit loses the message that was still needed; the ledger holds the offset until the window is on disk](/images/blog/ov-offset-ledger/ov-offset-ledger-1-crash-timeline.svg "The same crash, twice: auto-commit loses the message that was still needed; the ledger holds the offset until the window is on disk.")
+
+## The sink argument in three lines
+
+Before looking at when to commit, it helps to settle what redelivery is allowed to do. The argument is short:
+
+1. Offsets are committed only after the finalized window has been upserted.
+2. The upsert key is the window key, `(window_start, dimension, dimension_id)`, which is also the primary key of `delay_aggregates`.
+3. Therefore a redelivered window replaces the row with identical values instead of adding to it.
+
+Point 2 is the one that has to be visible in the SQL, not just in a docstring. From `sink.py`:
+
+```sql
+INSERT INTO delay_aggregates
+    (window_start, window_end, dimension, dimension_id, operator,
+     event_count, mean_delay_s, p90_delay_s, max_delay_s, min_delay_s, computed_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+ON CONFLICT (window_start, dimension, dimension_id) DO UPDATE SET
+    window_end   = EXCLUDED.window_end,
+    operator     = COALESCE(EXCLUDED.operator, delay_aggregates.operator),
+    event_count  = EXCLUDED.event_count,
+    mean_delay_s = EXCLUDED.mean_delay_s,
+    ...
+```
+
+`event_count = EXCLUDED.event_count`, never `event_count + EXCLUDED.event_count`. A unit test checks there is no `+` after `DO UPDATE`, which sounds petty until someone "optimises" the upsert into an accumulator.
+
+The "right now" tables (`vehicle_latest`, `trip_delay_latest`) are not windows; they are last-write-wins state keyed by vehicle or trip. Replacing the row is still the correct behaviour, but only if the redelivered row is not older than what is already there. Hence the guard:
+
+```sql
+ON CONFLICT (vehicle_id) DO UPDATE SET
+    trip_id = EXCLUDED.trip_id, route_id = EXCLUDED.route_id, operator = EXCLUDED.operator,
+    ...
+    bearing = EXCLUDED.bearing, observed_at = EXCLUDED.observed_at, updated_at = now()
+WHERE EXCLUDED.observed_at >= vehicle_latest.observed_at
+```
+
+One more way a batch can go stale on itself: a single `executemany` with two rows for the same vehicle, in the wrong order. The `WHERE` clause covers it, but it is cheaper not to send the older row at all:
+
+```python
+def latest_by_key(rows: Iterable[tuple], key_index: int, time_index: int) -> list[tuple]:
+    """Collapse a batch to the newest row per key so one executemany never races itself."""
+    latest: dict = {}
+    for row in rows:
+        current = latest.get(row[key_index])
+        if current is None or row[time_index] >= current[time_index]:
+            latest[row[key_index]] = row
+    return list(latest.values())
+```
+
+With this in place, redelivery is safe *provided* the redelivered messages rebuild the same window. Which brings us back to point 1: a crash must redeliver *all* of an open window, never a fragment. That is the ledger's job.
+
+## The ledger
+
+Per `(topic, partition)` the consumer keeps a deque of what it has consumed but not yet committed. Each entry is the message's offset and the end of the window it belongs to, or `None` if the message does not belong to any window.
+
+```python
+@dataclass
+class _PartitionLedger:
+    """Uncommitted messages of one partition: (offset, window_end) in consumption order."""
+
+    pending: deque = field(default_factory=deque)
+    committable: int | None = None  # offset to commit (one past the last durable message)
+
+    def add(self, offset: int, window_end: datetime | None) -> None:
+        self.pending.append((offset, window_end))
+
+    def release(self, watermark: datetime | None, positions_flushed: bool) -> None:
+        while self.pending:
+            offset, window_end = self.pending[0]
+            if window_end is None:  # a position: durable once the state flush happened
+                if not positions_flushed:
+                    break
+            elif watermark is None or window_end > watermark:
+                break
+            self.pending.popleft()
+            self.committable = offset + 1
+```
+
+`release` walks the deque from the head and pops entries for as long as they are durable. An entry with a window is durable once the watermark has reached its `window_end`, because that is exactly the condition under which `pop_finalized` handed the window to the sink. The first entry that is not durable stops the walk, even if later entries would qualify. That is the whole trick: a Kafka offset is a single number per partition, so committing means "everything before this is done". Only the longest *prefix* of durable entries can honestly be committed, and `committable` is one past the last offset in that prefix.
+
+The unit test is the clearest walk-through. Offsets 100 to 103 on one partition, alternating between predictions and positions:
+
+```python
+def test_ledger_commits_only_past_finalized_windows_in_order():
+    ledger = _PartitionLedger()
+    w_end = T0 + timedelta(minutes=5)
+    ledger.add(100, w_end)  # prediction in [12:00, 12:05)
+    ledger.add(101, None)  # a position
+    ledger.add(102, w_end + timedelta(minutes=5))  # prediction in [12:05, 12:10)
+    ledger.add(103, None)
+
+    ledger.release(watermark=T0 + timedelta(minutes=4), positions_flushed=True)
+    assert ledger.committable is None  # the head is still in an open window: nothing commits
+
+    ledger.release(watermark=w_end, positions_flushed=True)
+    assert ledger.committable == 102  # 100 and 101 are durable; 102 still open blocks 103
+    assert [o for o, _ in ledger.pending] == [102, 103]
+
+    ledger.release(watermark=w_end + timedelta(minutes=5), positions_flushed=True)
+    assert ledger.committable == 104 and not ledger.pending
+```
+
+Three moments. At a watermark of 12:04 the head entry (offset 100, window ending 12:05) is still open, so nothing commits, not even the position at 101 that is already flushed. At a watermark of 12:05, offsets 100 and 101 are released and `committable` becomes 102; offset 103 is a flushed position and would be durable on its own, but 102 sits in front of it in an open window, so it waits. At 12:10 everything drains and `committable` is 104.
+
+![Offset 103 is durable and still waits — committing it would commit 102 as well, and 102's window is open](/images/blog/ov-offset-ledger/ov-offset-ledger-2-durable-prefix.svg "Offset 103 is durable and still waits — committing it would commit 102 as well, and 102's window is open.")
+
+## Positions, dead letters and when commit actually runs
+
+Two kinds of message have no window. Vehicle positions never do; they only feed `vehicle_latest`. And a message that fails to decode gets sent to the dead-letter topic instead of the pipeline. Both enter the ledger with `window_end=None`, and a dead letter is deliberately treated as handled, because it *is* handled: the bytes and the error are on `dlq.<topic>` and `make replay-dlq` can pick them up later. Holding the offset back for it would block the partition on a message the processor can do nothing with.
+
+```python
+    def handle(self, msg) -> None:
+        topic = msg.topic()
+        metrics.CONSUMED.labels(topic).inc()
+        ledger = self._ledgers.setdefault((topic, msg.partition()), _PartitionLedger())
+        try:
+            event = self.pipeline.decode(msg.value())
+        except SchemaError as exc:
+            metrics.DECODE_ERRORS.labels(topic).inc()
+            self.dlq.send(msg, str(exc))
+            ledger.add(msg.offset(), None)  # dead-lettered = handled; commit like a position
+            return
+        self.pipeline.ingest(event, source=(topic, msg.partition()))
+        window_end = None
+        if topic == TOPIC_ARRIVAL_PREDICTIONS:
+            window_end = window_start_for(
+                event.timestamp, self.pipeline.windower.window_s
+            ) + timedelta(seconds=self.pipeline.windower.window_s)
+        ledger.add(msg.offset(), window_end)
+```
+
+A `None` entry is durable once the state tables have been flushed, which is what the `positions_flushed` flag stands for. The consumer loop makes that flag trivially true at commit time by ordering its periodic work: flush state, finalize windows, and only on a tick where a flush happened, commit.
+
+```python
+    def tick(self) -> None:
+        """Periodic work: flush state tables, finalize windows, commit offsets, report lag."""
+        now_mono = time.monotonic()
+        flushed = False
+        if now_mono - self._last_flush >= self.state_flush_s:
+            self.pipeline.flush_state()
+            self._last_flush = now_mono
+            flushed = True
+        ...
+            self.pipeline.finalize()
+        if flushed:
+            self._commit()
+```
+
+`_commit` then asks every ledger to release what it can and hands the broker one `TopicPartition` per partition that moved, synchronously:
+
+```python
+    def _commit(self) -> None:
+        watermark = self.pipeline.windower.watermark
+        offsets = []
+        for (topic, partition), ledger in self._ledgers.items():
+            ledger.release(watermark, positions_flushed=True)
+            if ledger.committable is not None:
+                offsets.append(TopicPartition(topic, partition, ledger.committable))
+                ledger.committable = None
+        if offsets:
+            try:
+                self.consumer.commit(offsets=offsets, asynchronous=False)
+                metrics.COMMITS.inc()
+            except Exception as exc:
+                log.warning("commit failed (will retry next tick): %s", exc)
+        metrics.UNCOMMITTED.set(sum(len(ledger.pending) for ledger in self._ledgers.values()))
+```
+
+The consumer is configured with `"enable.auto.commit": False` and `"enable.auto.offset.store": False`, so nothing else ever moves the committed position. The state flush interval is 5 s, so the commit cadence is at most that; the ledger's depth is exported as `processor_uncommitted_messages`, a useful panel next to consumer lag. A failed commit is logged and retried on the next flush tick, which is fine for the same reason redelivery is fine.
+
+There is one subtlety on the restart path. Redelivered messages that belong to windows that were already written must not rebuild a *partial* window and overwrite a complete row. The processor prevents that by seeding the watermark from `max(window_end)` in Postgres at start-up, clamped to the wall clock minus allowed lateness, so those messages are classified as late and dropped. Messages from windows that were still open at the crash are behind no watermark, get replayed in full, and rebuild the window from scratch.
+
+## The tests
+
+The ledger is pure Python with no Kafka import, so its tests are the two above plus one for positions:
+
+```python
+def test_ledger_holds_positions_until_state_flush():
+    ledger = _PartitionLedger()
+    ledger.add(7, None)
+    ledger.release(watermark=None, positions_flushed=False)
+    assert ledger.committable is None
+    ledger.release(watermark=None, positions_flushed=True)
+    assert ledger.committable == 8
+```
+
+The sink side has a recording fake for CI and a real-Postgres test behind `make test-integration`. The integration test is the one I would show anyone who asks "what happens on redelivery": it applies the same finalized window twice and reads back the row.
+
+```python
+@pytest.mark.integration
+def test_duplicate_delivery_does_not_double_count_in_real_postgres():
+    from common.config import postgres_dsn
+
+    sink = PostgresSink.connect(postgres_dsn())
+    key = AGG.key
+    try:
+        ...
+        sink.upsert_aggregates([AGG])
+        sink.upsert_aggregates([AGG])
+        rows = sink.conn.execute(
+            "SELECT event_count, mean_delay_s, p90_delay_s FROM delay_aggregates "
+            "WHERE window_start = %s AND dimension = %s AND dimension_id = %s",
+            (key.window_start, key.dimension, key.dimension_id),
+        ).fetchall()
+        assert rows == [(10, 144.0, 300.0)]  # one row, not two; count 10, not 20
+    finally:
+        sink.close()
+```
+
+Together they cover both halves of the argument: the ledger guarantees that a crash redelivers whole windows, and the upsert guarantees that a whole window written twice is one row.
+
+## Why this is enough
+
+Exactly-once is a PRD non-goal for this project, and not out of laziness. Kafka's transactional exactly-once covers Kafka-to-Kafka; the sink here is Postgres, so an end-to-end guarantee would mean storing offsets in the same database transaction as the aggregates, or a two-phase commit between broker and database. That is real plumbing, and it buys the same answer the ledger plus an idempotent upsert already give: a redelivered window produces one correct row.
+
+The trade-off is written in the decisions table of the README as one line: "Offsets commit after upsert; upsert key = window key" against "auto-commit; exactly-once transactions", because "at-least-once plus idempotency gives the same answer with none of the transactional plumbing".
+
+What I take from building it:
+
+- **Commit after the durable write, not after processing.** In a windowed consumer, "processed" can be minutes before "written". The offset must wait for the write.
+- **A commit is a prefix, not a set.** One durable message behind a non-durable one is not committable. A deque per partition with a walk-from-the-head is the simplest structure that respects this.
+- **Everything that is safe to redeliver must actually be redelivered whole.** Half a window is worse than no window, which is why the watermark is seeded from the database on restart.
+- **Handled includes dead-lettered.** A message the pipeline cannot decode still has a place to go, and holding the partition for it would be the real outage.
+- **Test the claim, not the mechanism.** The Postgres test does not know about ledgers; it asserts count 10, not 20.

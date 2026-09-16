@@ -1,0 +1,292 @@
+---
+title: "SCD type 2 in dbt with window functions only"
+date: "2026-09-13"
+excerpt: "Dutch municipalities merge almost every year, and a warehouse that only knows the current list quietly rewrites the past. Here is how I versioned the municipality dimension in nl-vehicle-warehouse with lag(), a running sum and a group by — no dbt snapshots, no macros, and a test that guards the one assumption the whole derivation rests on."
+tags: ["Engineering", "dbt", "SQL"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+Type 2 slowly changing dimensions have a reputation for being fiddly: snapshot
+tables, merge statements, hashes of attribute columns, a scheduler that has to run
+on time. In `nl-vehicle-warehouse` the Dutch municipality dimension fits in a
+single dbt model with four window functions and a `group by`. This post walks
+through that model, the join that uses it, and the test that makes it safe to
+rely on.
+
+## What goes wrong without history
+
+The fact table `fct_voertuigpark_gemeente` (*voertuigpark* = vehicle fleet,
+*gemeente* = municipality) holds one row per municipality per *peiljaar*
+(reference year) per vehicle type: the number of vehicles registered there on 1
+January of that year, from CBS, the Dutch statistics office. The dimension
+`dim_gemeente` is built from CBS's "Gebieden in Nederland" files — one file per
+year, 2015 to 2026, listing every municipality that exists in that year.
+
+The Netherlands reorganises its municipalities almost every year: 393 in 2015,
+342 in 2026. The biggest wave is 2019, when 34 municipality codes stop and 9 new
+ones appear — `Het Hogeland`, `Westerkwartier`, `Hoeksche Waard` and so on. Since
+2015, 72 codes have been discontinued.
+
+Take `GM0005`, Bedum: 4,856 passenger cars on 1 January 2016. Its code exists in
+the 2015 through 2018 files and is simply gone in 2019. If the dimension only
+knows the current municipalities — a type 1 table, or a join on an `is_actueel`
+(is current) flag — that 2016 row has nowhere to land. Four years of Bedum vanish
+from every report, along with the history of the other 71 discontinued codes.
+
+The second failure is subtler. In the 2024 file CBS renamed six municipalities by
+adding a province suffix: `Hengelo` became `Hengelo (O.)`, `Laren` became `Laren
+(NH.)`, `Rijswijk` became `Rijswijk (ZH.)`. A type 1 dimension overwrites the
+name, and suddenly the 2016 figure of 40,655 cars is reported under a name that
+did not exist in 2016. That is the "history moves retroactively" problem: nothing
+errors, the totals still add up, and the labels are wrong.
+
+Type 2 fixes both. Every municipality code gets one row per *version*, each with a
+validity period (`geldig_van`/`geldig_tot`, valid from/to), and the fact row joins
+to the version that was valid in its own year.
+
+## Why not a dbt snapshot
+
+dbt ships a `snapshot` feature for exactly this, and I did not use it. A dbt
+snapshot observes a source over time: every run compares the current state with
+what it stored last time and writes a new version on a change. That is the right
+tool when the source only ever shows you *now*.
+
+This source is different. CBS publishes one full snapshot per year, and all
+twelve are on disk at once. As `docs/data.md` puts it, the difference between two
+consecutive yearly files *is* the reorganisation a type 2 dimension has to
+capture. A dbt snapshot would only record history from the day I first ran it,
+and would add state to preserve between runs. Deriving the versions from the
+files is stateless, reproducible from an empty directory, and identical on the CI
+fixtures. So: plain SQL.
+
+## Four window functions and a group by
+
+The staging model `stg_cbs__gemeenten` pivots the long-format CBS files into one
+row per `gemeente_code` per `peiljaar` with `gemeente_naam` (name),
+`agglomeratie_naam` and `arbeidsmarktregio` — 4,326 rows. From there,
+`dim_gemeente.sql` is a chain of CTEs.
+
+**Step 1: look at the previous year.** The CTE `met_vorige` ("with previous")
+uses `lag()` to put last year's name next to this year's, per code:
+
+```sql
+met_vorige as (
+
+    select
+        peiljaar,
+        gemeente_code,
+        gemeente_naam,
+        agglomeratie_naam,
+        arbeidsmarktregio,
+        lag(gemeente_naam) over (
+            partition by gemeente_code order by peiljaar
+        ) as vorige_naam
+    from snapshots
+
+),
+```
+
+**Step 2: flag a change.** `gemarkeerd` ("flagged") turns that into a 0/1 column
+`is_wijziging` (is change). Only the name counts as a change; the model comment
+explains that CBS re-shuffles its own agglomerations for 51 codes without anything
+happening to the municipality, and versioning on those would inflate the
+dimension from 420 to 475 rows for no real-world event.
+
+```sql
+gemarkeerd as (
+
+    select
+        ...
+        case
+            when vorige_naam is null then 1
+            when gemeente_naam <> vorige_naam then 1
+            else 0
+        end as is_wijziging
+    from met_vorige
+
+),
+```
+
+The `vorige_naam is null` branch is doing double duty. `gemeente_naam` has a
+`not_null` test in staging, so the lagged value is only null on the first row of
+a code — and the first row should start a version. (The source comment also
+explains why this isn't `is distinct from`: the sqlfluff version in CI does not
+parse it in the DuckDB dialect.)
+
+**Step 3: number the versions with a running sum.** This is the trick. A
+cumulative `sum()` over the change flag, ordered by year, increments exactly when
+a change happens and stays flat otherwise. Every row now carries the number of
+the version it belongs to:
+
+```sql
+versies as (
+
+    select
+        *,
+        sum(is_wijziging) over (
+            partition by gemeente_code order by peiljaar
+            rows between unbounded preceding and current row
+        ) as versie
+    from gemarkeerd
+
+),
+```
+
+**Step 4: collapse to validity ranges.** `perioden` ("periods") groups by code and
+version and takes the first and last year of each:
+
+```sql
+perioden as (
+
+    select
+        gemeente_code,
+        versie,
+        min(peiljaar)          as van_jaar,
+        max(peiljaar)          as tot_jaar,
+        max(gemeente_naam)     as gemeente_naam,      -- constant binnen de versie
+        max(agglomeratie_naam) as agglomeratie_naam,  -- laatste stand; zie yml
+        max(arbeidsmarktregio) as arbeidsmarktregio
+    from versies
+    group by gemeente_code, versie
+
+),
+```
+
+**Step 5: turn years into dates, and leave the current version open.** The last
+CTE builds the surrogate key from code plus version, and converts `van_jaar` /
+`tot_jaar` into real dates. A version whose last year equals the newest year in
+the source is the current one and gets `9999-12-31` rather than 31 December:
+
+```sql
+dimensie as (
+
+    select
+        {{ dbt_utils.generate_surrogate_key(['p.gemeente_code', 'p.versie']) }} as gemeente_key,
+        ...
+        row_number() over (partition by p.gemeente_code order by p.van_jaar)    as versienummer,
+
+        make_date(p.van_jaar, 1, 1)                                             as geldig_van,
+        case
+            when p.tot_jaar = l.peiljaar then cast('9999-12-31' as date)
+            else make_date(p.tot_jaar, 12, 31)
+        end                                                                     as geldig_tot,
+        p.tot_jaar = l.peiljaar                                                 as is_actueel
+
+    from perioden as p
+    cross join laatste_peiljaar as l
+
+)
+```
+
+Two details. `geldig_tot` is never null: a `between` join against null matches
+nothing and would silently send every current municipality to the unknown
+member. And the exposed `versienummer` is a `row_number()` over the aggregated
+periods rather than the running sum itself, so it is guaranteed dense (1, 2, ...)
+and the grain test can run on it.
+
+Hengelo ends up as two rows: version 1 `Hengelo`, 2015-01-01 to 2023-12-31, and
+version 2 `Hengelo (O.)`, 2024-01-01 to 9999-12-31 and current. Bedum is one
+row, 2015-01-01 to 2018-12-31, not current. Across the whole source: 420 version
+rows over 414 codes, 342 of them current.
+
+![lag(), a running sum and a group by: twelve yearly rows become two versions with a validity range each](/images/blog/warehouse-scd2-with-window-functions/warehouse-scd2-1-running-sum-versioning.svg "lag(), a running sum and a group by: twelve yearly rows become two versions with a validity range each.")
+
+## The temporal join and the unknown member
+
+The dimension is only half the pattern; the other half is in the fact model. Each
+fact row joins on code *and* on the date falling inside the version's validity
+period. The comment in `fct_voertuigpark_gemeente.sql` is the whole point in one
+sentence — "the 2016 figure hangs on the municipality as it was named in 2016,
+not the current one":
+
+```sql
+    -- DE TEMPORELE JOIN. Dit is het hele punt van SCD2: het cijfer van 2016 hangt aan de
+    -- gemeente zoals die in 2016 heette, niet aan de huidige.
+    left join {{ ref('dim_gemeente') }} as dg
+        on
+            v.gemeente_code = dg.gemeente_code
+            and make_date(v.peiljaar, 1, 1) between dg.geldig_van and dg.geldig_tot
+```
+
+Bedum's 2016 row lands on Bedum's single version. Hengelo's 2016 row lands on
+version 1 (`Hengelo`) and its 2024 row on version 2 (`Hengelo (O.)`). The mart
+`mart_voertuigpark_herindeling` then puts the newest name per code
+(`gemeente_naam_nu`) next to the name at the time (`naam_destijds`), so a series
+is comparable across a reorganisation while every row keeps its historical
+label. It finds the newest version with `row_number()` over `geldig_van`, not
+with `is_actueel` — the 72 discontinued codes have no current version and would
+drop out of the mart entirely.
+
+![The between-join gives 2016 the name the municipality had in 2016; joining on is_actueel relabels history and loses rows](/images/blog/warehouse-scd2-with-window-functions/warehouse-scd2-2-temporal-join.svg "The between-join gives 2016 the name the municipality had in 2016; joining on is_actueel relabels history and loses rows.")
+
+The `left join` plus `coalesce(dg.gemeente_key, '-1')` is the unknown member
+convention. `dim_gemeente` ends with a `union all` that adds one row with key
+`'-1'`, code `(onbekend)` (unknown) and name `Onbekende gemeente`, valid from
+1900-01-01 to 9999-12-31. A fact row whose municipality cannot be resolved does
+not vanish in an inner join; it lands on `'-1'`, where a test can see it.
+
+## The test that guards the assumption
+
+The derivation makes one assumption that the SQL cannot check for itself:
+`geldig_tot` is "31 December of the version's last year". That is only right if
+a code's years are contiguous. If a code vanished in 2017 and came back in 2020,
+`min`/`max` would produce one continuous period that never existed. A singular
+test, `assert_gemeente_aaneengesloten_peiljaren` (*aaneengesloten* = contiguous),
+guards exactly that:
+
+```sql
+with opeenvolgend as (
+
+    select
+        gemeente_code,
+        peiljaar,
+        lag(peiljaar) over (partition by gemeente_code order by peiljaar) as vorig_peiljaar
+    from {{ ref('stg_cbs__gemeenten') }}
+
+)
+
+select *
+from opeenvolgend
+where
+    vorig_peiljaar is not null
+    and peiljaar <> vorig_peiljaar + 1
+```
+
+It runs on the *staging* model, not the dimension: it tests the input to the
+derivation, not its output. It returns rows only on a gap, and any row fails the
+build. The schema yml for `dim_gemeente` names this test as the reason the
+`geldig_tot` derivation is allowed at all.
+
+Three more tests pin down the invariants a type 2 dimension needs:
+`assert_gemeente_geen_overlappende_perioden` (no two versions of one code
+overlap — otherwise the between-join duplicates fact rows),
+`assert_gemeente_hoogstens_een_actuele_versie` (at most one current version per
+code; zero is fine for a discontinued municipality, two is always wrong), and
+`dbt_utils.unique_combination_of_columns` on `[gemeente_code, versienummer]` as
+the grain test. On the fact side, `assert_voertuigpark_geen_onbekende_gemeente`
+fails the build if any row has `gemeente_key = '-1'`. Its comment names the two
+causes: a join on `is_actueel` instead of the period, or a year outside the
+dimension's coverage. The second is real — the CBS fleet figures go back to 2000
+while the area files start in 2015, and without the coverage filter at the top of
+the fact model 23,910 rows from 2000–2014 would land on `'-1'`.
+
+One last pitfall, from the staging yml: CBS pads `StringValue` to 50 characters.
+Without a `trim()` in staging, the name differs from itself every year and the
+SCD2 mints a new version for every municipality annually. Whitespace is a change
+too, as far as `<>` is concerned.
+
+## Takeaways
+
+- If the source already delivers full periodic snapshots, you do not need a
+  snapshotting mechanism. `lag()` to detect a change, a running `sum()` to number
+  versions and `min`/`max` per group for the ranges is the whole type 2
+  derivation, stateless and reproducible.
+- Decide explicitly which attributes trigger a version. Here only the name does;
+  the rest are attributes *of* a version, documented next to the numbers that
+  choice changes (420 rows versus 475).
+- Close the current version with `9999-12-31`, never null, so the `between` join
+  works without a `coalesce` on every consumer.
+- Join facts on the validity period, never on the current flag. Discontinued
+  entities have no current row, and their history is the point.
+- Test the assumption the derivation rests on, and test it on the input. The
+  code cannot know the years are contiguous; the test can.

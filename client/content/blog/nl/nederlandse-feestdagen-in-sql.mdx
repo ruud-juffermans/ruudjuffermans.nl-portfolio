@@ -1,0 +1,342 @@
+---
+title: "Nederlandse feestdagen in SQL: een datumdimensie die ook op 5 mei 2016 klopt"
+date: "2026-08-03"
+excerpt: "Bijna elke stuurinformatievraag bij de overheid gaat over doorlooptijd in werkdagen. Dan moet je warehouse weten wanneer Pasen valt — en wat er gebeurt als twee feestdagen op dezelfde dag landen."
+tags: ["Techniek", "SQL", "DuckDB"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+Bijna elke stuurinformatievraag die ik bij een uitvoeringsorganisatie krijg,
+gaat vroeg of laat over doorlooptijd. Hoe lang duurt een bezwaar? Halen we de
+wettelijke termijn? En dan volgt onvermijdelijk de aanvulling: *in werkdagen,
+natuurlijk*.
+
+Daarmee verschuift de vraag van het rapport naar het fundament. Een warehouse
+dat werkdagen kan tellen, moet weten wanneer Pasen valt. En Pasen valt niet op
+een vaste datum.
+
+In mijn open-data warehouse zit dat in twee bestanden: een dbt-macro die de
+Nederlandse feestdagen uitrekent, en de datumdimensie die hem gebruikt. Hieronder
+loop ik ze allebei langs — inclusief de twee plekken waar het misgaat als je niet
+oplet.
+
+## Eerst een ruggengraat
+
+Een datumdimensie begint bij één rij per dag, zonder gaten. Gaten zijn dodelijk:
+als je dimensie 29 februari 2024 mist, verdwijnen alle feiten van die dag
+stilletjes uit je rapportage zodra iemand een inner join gebruikt.
+
+`dbt_utils` heeft daar een macro voor:
+
+```sql
+with spine as (
+
+    {{ dbt_utils.date_spine(
+        datepart="day",
+        start_date="cast('1990-01-01' as date)",
+        end_date="cast('2030-01-01' as date)"
+    ) }}
+
+),
+
+kalender as (
+    select cast(date_day as date) as datum from spine
+),
+```
+
+De einddatum is exclusief, dus dit levert 14.610 rijen op: 1 januari 1990 tot en
+met 31 december 2029. Ruim genoeg voor historie én voor de vooruitblikkende
+termijnen waar planners mee rekenen.
+
+## Pasen uitrekenen
+
+Alle bewegende Nederlandse feestdagen hangen aan Eerste Paasdag. Goede Vrijdag is
+twee dagen ervoor, Hemelvaart 39 dagen erna, Pinksteren 49 en 50. Reken je Pasen
+uit, dan heb je de rest gratis.
+
+Daarvoor bestaat de *anonieme Gregoriaanse paasberekening* — een reeks
+integerdelingen en modulo's die uit een jaartal de datum produceert:
+
+```sql
+basis as (
+    select
+        jaar,
+        jaar % 19   as a,
+        jaar // 100 as b,
+        jaar % 100  as c
+    from jaren
+),
+
+hulp as (
+    select
+        jaar, a, b, c,
+        b // 4        as d,
+        b % 4         as e,
+        (b + 8) // 25 as f,
+        c // 4        as i,
+        c % 4         as k
+    from basis
+),
+
+maand_h as (
+    select
+        jaar, a, e, i, k,
+        (19 * a + b - d - (b - f + 1) // 3 + 15) % 30 as h
+    from hulp
+),
+
+maand_l as (
+    select
+        jaar, a, h,
+        (32 + 2 * e + 2 * i - h - k) % 7 as l
+    from maand_h
+),
+
+pasen as (
+    select
+        jaar,
+        make_date(
+            jaar,
+            (h + l - 7 * ((a + 11 * h + 22 * l) // 451) + 114) // 31,
+            ((h + l - 7 * ((a + 11 * h + 22 * l) // 451) + 114) % 31) + 1
+        ) as eerste_paasdag
+    from maand_l
+),
+```
+
+Dit is de zeldzame code die je niet hoeft te begrijpen om te kunnen
+onderhouden — het algoritme staat al eeuwen vast. Wat je wél moet weten is dit:
+**elke deling hierin is een integerdeling.** In DuckDB is dat `//`, niet `/`.
+
+```sql
+select 2016 // 100 as int_div, 2016 / 100 as gewone_div;
+```
+```
+┌─────────┬────────────┐
+│ int_div │ gewone_div │
+├─────────┼────────────┤
+│ 20      │ 20.16      │
+└─────────┴────────────┘
+```
+
+Schrijf je één keer `/`, dan krijg je een double, klopt geen enkele modulo
+verderop meer, en produceert je macro doodleuk data die er plausibel uitziet.
+Geen foutmelding, geen crash — gewoon een verkeerde Pasen. Dat is precies het
+soort fout waar tests voor zijn.
+
+## Koningsdag: de regel die twee keer veranderde
+
+Vaste feestdagen zijn saai, op één na. Koningsdag is 27 april, tenzij dat een
+zondag is — dan wordt het 26 april. En vóór 2014 heette het Koninginnedag en viel
+het op 30 april, met dezelfde zondagregel naar 29 april.
+
+Mijn spine begint in 1990, dus die tweede tak is geen theorie. Beide regels
+moeten erin:
+
+```sql
+koningsdag as (
+    select
+        jaar,
+        case
+            when jaar >= 2014 and isodow(make_date(jaar, 4, 27)) = 7 then make_date(jaar, 4, 26)
+            when jaar >= 2014                                        then make_date(jaar, 4, 27)
+            when isodow(make_date(jaar, 4, 30)) = 7                  then make_date(jaar, 4, 29)
+            else make_date(jaar, 4, 30)
+        end as datum,
+        case when jaar >= 2014 then 'Koningsdag' else 'Koninginnedag' end as feestdag
+    from jaren
+),
+```
+
+Over het bereik 1990–2029 schuift Koningsdag twee keer op (2014 en 2025) en
+Koninginnedag drie keer (1995, 2000 en 2006). Vijf dagen in veertig jaar. Precies
+het soort detail dat niemand mist in de review, en dat een jaar later een
+werkdagentelling laat afwijken van de vakafdeling.
+
+Daarna komt alles bij elkaar in één lijst:
+
+```sql
+los as (
+    select make_date(jaar, 1, 1) as datum, 'Nieuwjaarsdag' as feestdag from jaren
+    union all select eerste_paasdag - 2,      'Goede Vrijdag'      from pasen
+    union all select eerste_paasdag,          'Eerste Paasdag'     from pasen
+    union all select eerste_paasdag + 1,      'Tweede Paasdag'     from pasen
+    union all select datum,                   feestdag             from koningsdag
+    union all select make_date(jaar, 5, 5),   'Bevrijdingsdag'     from jaren
+    union all select eerste_paasdag + 39,     'Hemelvaartsdag'     from pasen
+    union all select eerste_paasdag + 49,     'Eerste Pinksterdag' from pasen
+    union all select eerste_paasdag + 50,     'Tweede Pinksterdag' from pasen
+    union all select make_date(jaar, 12, 25), 'Eerste Kerstdag'    from jaren
+    union all select make_date(jaar, 12, 26), 'Tweede Kerstdag'    from jaren
+)
+```
+
+## De valkuil: 5 mei 2016
+
+Elf feestdagen maal veertig jaar is 440 rijen. Maar er zijn geen 440 unieke
+feestdagen in dat bereik, en dáár zit de bug die ik bijna liet lopen.
+
+Hemelvaartsdag is Pasen plus 39 dagen. Omdat Pasen tussen 22 maart en 25 april
+kan vallen, zwerft Hemelvaart tussen 30 april en 3 juni. Bevrijdingsdag ligt vast
+op 5 mei — midden in dat bereik. Vroeg of laat botsen ze.
+
+```sql
+select * from feestdagen where feestdag like '% en %' order by datum;
+```
+```
+┌────────────┬──────────────────────────────────┐
+│   datum    │             feestdag             │
+├────────────┼──────────────────────────────────┤
+│ 2005-05-05 │ Bevrijdingsdag en Hemelvaartsdag │
+│ 2016-05-05 │ Bevrijdingsdag en Hemelvaartsdag │
+└────────────┴──────────────────────────────────┘
+```
+
+Twee keer in veertig jaar. Zonder afvangen levert de macro voor 5 mei 2016 twee
+rijen op, en die `left join` in de datumdimensie is dan geen lookup meer maar een
+fan-out: 5 mei 2016 komt twee keer in `dim_datum` terecht. Je uniciteitstest op
+`datum_key` slaat alarm — als je die hebt. Heb je hem niet, dan telt elk feit van
+die dag voortaan dubbel.
+
+De oplossing is één regel, maar hij moet er wel staan:
+
+```sql
+select
+    datum,
+    string_agg(feestdag, ' en ' order by feestdag) as feestdag
+from los
+group by datum
+```
+
+440 rijen worden er 438. En 5 mei 2016 krijgt netjes het label
+"Bevrijdingsdag en Hemelvaartsdag" mee in plaats van willekeurig één van beide.
+
+> Een dimensie is per definitie uniek op haar sleutel. Elke join die dat stilletjes
+> doorbreekt, vermenigvuldigt je cijfers in plaats van ze op te zoeken.
+
+## Nederlandse namen zonder locale-gedoe
+
+Terug naar de dimensie zelf. `strftime('%B')` geeft `January`, niet `januari`, en
+ik ga geen database-locale configureren voor twaalf woorden. Twee literal lijsten
+zijn hier gewoon het juiste antwoord:
+
+```sql
+namen as (
+    select
+        [
+            'januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli',
+            'augustus', 'september', 'oktober', 'november', 'december'
+        ] as maanden,
+        [
+            'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag',
+            'zaterdag', 'zondag'
+        ] as dagen
+),
+```
+
+Dat werkt zo netjes door één eigenschap van DuckDB: **lijstindexering is
+1-based.** `month()` geeft 1–12 en `isodow()` geeft 1–7 (maandag–zondag), dus die
+kun je er rechtstreeks in stoppen zonder `- 1`:
+
+```sql
+select (['januari','februari','maart'])[3] as derde;
+-- maart
+```
+
+Kom je van Python of van een array-type dat wél bij nul begint, dan is dit een
+klassieke off-by-one die je hele december naar november verschuift.
+
+## week() en isoyear() horen bij elkaar
+
+De rest van de dimensie is rechttoe rechtaan — op één paar kolommen na:
+
+```sql
+select
+    cast(strftime(k.datum, '%Y%m%d') as integer) as datum_key,
+    k.datum,
+    year(k.datum)                                as jaar,
+    quarter(k.datum)                             as kwartaal,
+    month(k.datum)                               as maand,
+    n.maanden[month(k.datum)]                    as maand_naam,
+    day(k.datum)                                 as dag,
+    dayofyear(k.datum)                           as dag_van_jaar,
+    isodow(k.datum)                              as dag_van_week,
+    n.dagen[isodow(k.datum)]                     as dag_naam,
+    week(k.datum)                                as weeknummer,
+    isoyear(k.datum)                             as iso_jaar,
+    isodow(k.datum) >= 6                         as is_weekend,
+    f.datum is not null                          as is_feestdag,
+    f.feestdag                                   as feestdag_naam,
+    isodow(k.datum) <= 5 and f.datum is null     as is_werkdag
+
+from kalender as k
+cross join namen as n
+left join feestdagen as f on k.datum = f.datum
+```
+
+`week()` in DuckDB is het ISO-weeknummer, en een ISO-week hoort bij een ISO-jaar
+dat niet altijd gelijk is aan het kalenderjaar. Kijk naar de laatste dag van de
+spine:
+
+```
+┌────────────┬──────┬────────────┬──────────┬──────────────┐
+│   datum    │ jaar │ weeknummer │ iso_jaar │ dag_van_week │
+├────────────┼──────┼────────────┼──────────┼──────────────┤
+│ 2029-12-30 │ 2029 │ 52         │ 2029     │ 7            │
+│ 2029-12-31 │ 2029 │ 1          │ 2030     │ 1            │
+└────────────┴──────┴────────────┴──────────┴──────────────┘
+```
+
+31 december 2029 is een maandag en valt daarmee in week 1 van 2030. Groepeer je
+op `jaar` en `weeknummer` samen, dan belandt die dag in "week 1 van 2029" —
+tussen 1 en 7 januari, twaalf maanden eerder. Daarom staat `iso_jaar` er expliciet
+naast: wie op weeknummer groepeert, hoort op `iso_jaar` te groeperen, niet op
+`jaar`.
+
+Merk ook op dat `is_werkdag` één afgeleide is die één keer wordt vastgelegd —
+maandag tot en met vrijdag én geen feestdag. Dat is het hele punt van een
+datumdimensie. De definitie van "werkdag" hoort op één plek te staan, niet in
+veertien dashboards.
+
+## Het onbekend-lid
+
+De laatste stap is er één die in veel modellen ontbreekt:
+
+```sql
+select
+    -1                         as datum_key,
+    cast('1900-01-01' as date) as datum,
+    1900                       as jaar,
+    -- ...
+    'onbekend'                 as maand_naam,
+    -- ...
+    false                      as is_werkdag
+```
+
+Feiten hebben soms geen datum: een bezwaar dat nog niet is afgehandeld, een
+brondatum die leeg of onleesbaar binnenkomt. De keuze is dan een `null` in de
+feittabel — met een `left join` en de eeuwige twijfel of iemand die join goed
+schrijft — of een expliciete rij waar elk feit naartoe `coalesce`t.
+
+Met een onbekend-lid blijven al je joins `inner`, blijft referentiële integriteit
+testbaar, en verschijnt "onbekend" gewoon als categorie in het rapport. Ontbrekende
+data wordt zichtbaar in plaats van dat ze wegvalt.
+
+## Waarom dit meer dan een kalender is
+
+Veertig jaar aan datums, elf feestdagen, twee botsingen, vijf verschoven
+Koningsdagen en één onbekend-lid. Ongeveer honderdvijftig regels SQL.
+
+De opbrengst is dat elke doorlooptijdvraag daarna hetzelfde antwoord geeft, wie
+hem ook stelt. Geen analist die zelf even een weekendfilter schrijft, geen
+afdeling die Bevrijdingsdag wel meetelt en een andere niet, geen discussie in de
+stuurgroep over de vraag welke van de twee getallen nu klopt.
+
+Dat is waar het bij stuurinformatie op vastloopt — vrijwel nooit op de
+visualisatie, bijna altijd op een definitie die nergens is vastgelegd.
+
+*De volledige macro en het model staan op [GitHub](https://github.com/datavakwerk/nl-vehicle-warehouse).*
+
+*Twijfel je of de doorlooptijden in jouw rapportages op dezelfde definitie
+rusten? [Plan een kennismaking](mailto:datavakwerk@ruudjuffermans.nl) — dan kijk
+ik graag een keer mee.*

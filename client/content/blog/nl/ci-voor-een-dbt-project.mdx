@@ -1,0 +1,112 @@
+---
+title: "CI voor een dbt-project: elke pull request bouwt het hele warehouse"
+date: "2026-08-03"
+excerpt: "In mijn open-data warehouse draait bij elke pull request de volledige keten: linting, dbt build met alle tests en verse documentatie. Eén workflowbestand, geen externe infrastructuur. Zo zit het in elkaar."
+tags: ["Techniek", "dbt", "CI/CD"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+In [het open-data warehouse](/blog/open-data-warehouse-met-dbt) beloofde ik dat
+er niets naar main gaat zonder dat de volledige keten heeft gedraaid. Die
+belofte is één YAML-bestand: `.github/workflows/ci.yml`, zestig regels, één
+job. In dit stuk loop ik er doorheen — niet regel voor regel, maar langs de
+beslissingen die erin zitten. Want een CI-pipeline is net als een datamodel:
+de code is snel geschreven, de keuzes zijn het werk.
+
+## Het probleem: de data staat niet in git
+
+De eerste vraag bij CI voor een dataproject is niet "welke stappen draai ik",
+maar "waar draai ik ze *op*". De ruwe data — miljoenen RDW-registraties —
+staat in `data/raw/` en die map staat om goede redenen niet in git. Een
+pipeline die de echte bron nodig heeft, is traag, duur en afhankelijk van een
+externe API die op elk moment iets anders kan teruggeven.
+
+De oplossing zit niet in de workflow maar in het dbt-project zelf. De bronnen
+zijn gedefinieerd met een omgevingsvariabele in het pad:
+
+```yaml
+meta:
+  external_location: "{{ env_var('DBT_RAW_DIR', 'data/raw') }}/rdw_{name}.parquet"
+```
+
+Lokaal wijst `DBT_RAW_DIR` standaard naar `data/raw/`. In CI zet de workflow
+hem op `tests/fixtures/` — een kleine, ingecheckte set parquetbestanden met
+dezelfde structuur als de echte bron, inclusief de datakwaliteitsproblemen
+die het warehouse geacht wordt op te lossen. Eén variabele, en exact dezelfde
+modellen, tests en documentatie draaien op een bron die in seconden laadt.
+
+> CI test niet de data van vandaag. CI test of de *logica* klopt op data
+> waarvan je precies weet wat erin zit.
+
+Dat DuckDB de motor is, maakt de rest triviaal: het warehouse is een bestand.
+Geen testomgeving aanvragen, geen credentials in secrets, geen kosten per
+run. In `profiles.yml` — bewust in de repo, niet in `~/.dbt/` — staat naast
+`dev` een apart `ci`-target, zodat een CI-run nooit per ongeluk een lokale
+database raakt.
+
+## Snel falen, in de goede volgorde
+
+De job zelf is een rechte lijn, maar de volgorde van de stappen is bewust:
+
+1. **`ruff check .`** — de goedkoopste controle eerst. Een tikfout in een
+   Python-loader hoeft geen dbt-run van minuten te kosten.
+2. **`dbt deps`** — vóór de SQL-linter, en dat is minder vanzelfsprekend dan
+   het lijkt. sqlfluff draait hier met de dbt-templater, die de modellen
+   écht compileert in plaats van Jinja weg te gokken. Dat betekent wel dat
+   `dbt_utils` geïnstalleerd moet zijn, anders struikelt de linter over elke
+   `{{ dbt_utils.* }}`-aanroep.
+3. **`sqlfluff lint models`** — stijl en structuur van alle SQL, gezien zoals
+   DuckDB hem ziet.
+4. **`dbt build --target ci`** — modellen bouwen én alle tests draaien in
+   afhankelijkheidsvolgorde: uniciteit, verplichte velden, referentiële
+   integriteit tussen feiten en dimensies.
+5. **`dbt docs generate --static`** — de volledige documentatie met lineage,
+   als één zelfstandig HTML-bestand.
+
+Die laatste stap is meer dan een formaliteit. De documentatie en het
+`manifest.json` worden als artifact geüpload — met `if-no-files-found: error`,
+want een documentatiestap die stilletjes niets oplevert is erger dan een die
+faalt. Zo hoort bij elke wijziging een downloadbare, actuele beschrijving van
+het hele model. Documentatie die bij elke merge opnieuw wordt gegenereerd,
+*kan* niet verouderen.
+
+## De kleine dingen die je pas mist als ze er niet zijn
+
+Drie regels bovenin doen onevenredig veel werk:
+
+```yaml
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+Wie drie keer kort na elkaar pusht, wil één relevante uitslag — niet drie
+runs in de wachtrij waarvan er twee over verouderde code gaan. Verouderde
+runs worden afgebroken zodra er een nieuwe start.
+
+Daarnaast: `permissions: contents: read`. De workflow kan de repo lezen en
+verder niets. Een CI-pipeline die alleen hoeft te bouwen, hoort geen token te
+hebben waarmee hij kan schrijven — hetzelfde principe als autorisatie in een
+datawarehouse, alleen dan voor de pipeline zelf.
+
+En de pip-cache is gekoppeld aan *beide* requirements-bestanden, zodat een
+gewijzigde dev-dependency de cache net zo goed ongeldig maakt als een
+gewijzigde runtime-dependency. Klein detail; scheelt elke run een minuut.
+
+## Waarom dit relevant is voor jouw organisatie
+
+Dit is dezelfde discipline die ik bij opdrachtgevers tegenkom onder duurdere
+namen: een OTAP-straat, een releaseproces, een kwaliteitspoort. De essentie
+past in zestig regels YAML: elke wijziging bewijst eerst dat de hele keten
+nog werkt, op een voorspelbare bron, en levert zijn eigen actuele
+documentatie mee. De technologie verschilt per omgeving — Azure DevOps,
+GitLab, Databricks Workflows — maar de vragen zijn overal dezelfde: waar
+draait je test op, wat controleer je in welke volgorde, en wat bewaar je als
+bewijs?
+
+*Het volledige workflowbestand staat op [GitHub](https://github.com/datavakwerk/nl-vehicle-warehouse).*
+
+*Draait jouw datateam al elke wijziging door zo'n poort — of gaat er nog
+weleens iets stilletjes mee naar productie?
+[Plan een kennismaking](mailto:datavakwerk@ruudjuffermans.nl) — dan kijk ik
+graag een keer mee.*

@@ -1,0 +1,78 @@
+---
+title: "RAG over Dutch court rulings: every answer with a source, or no answer"
+date: "2026-08-08"
+excerpt: "A language model that sounds convincing is easy. A language model that only claims what it can prove is work. I built a RAG system over rulings from Rechtspraak.nl in which every claim points back to the exact passage — and 'no source found' is a first-class answer."
+tags: ["Project", "GenAI", "RAG"]
+topic: "ai"
+project: "strafrecht-rag"
+---
+The problem with language models isn't that they make mistakes — people do
+too. The problem is that they make mistakes with the same confidence as when
+they're right. In a demo that's annoying; in a serious environment it's
+disqualifying. A lawyer who finds one fabricated reference will never trust
+another answer from the system. Rightly so.
+
+That makes legal text the perfect proving ground: nowhere is a fabricated
+source unmasked faster than with an ECLI number that doesn't exist. So I
+built **`strafrecht-rag`**: a RAG (Retrieval-Augmented Generation) system
+over Dutch court rulings from Rechtspraak.nl, designed around two rules that
+are not negotiable.
+
+1. **Every claim gets an ECLI reference.** From answer back to the exact
+   passage in the exact ruling. No black box.
+2. **No relevant source, no answer.** "No source found" is a first-class
+   outcome, not an error message.
+
+## The fix: three layers, each testable on its own
+
+**Ingest.** A client fetches rulings through the Rechtspraak.nl Open Data
+interface — with rate limiting and retries, because you treat a public API
+with respect — and parses the raw XML into one normalised model: ECLI,
+court, date, area of law and the text sections.
+
+**Index.** The text is split into overlapping chunks, *preserving section
+and paragraph numbers*. That detail is half the system: it's the only reason
+an answer can later point back to its exact place in the source, instead of
+vaguely to "somewhere in this ruling". The chunks are embedded in batches
+and stored in a vector store, with metadata for filtering on court, date and
+area of law.
+
+**Query.** The question is embedded, the best-matching passages are
+retrieved, and the prompt forces the model to answer solely from those
+passages — with an ECLI reference per claim, and an explicit path for
+"there is no source for this". The model is not allowed to know anything
+retrieval didn't hand it.
+
+## Quality is measured, not hoped for
+
+The question "does it work?" is notoriously vague for RAG systems, so here
+it has been replaced by a measurement. A fixed evaluation set — questions
+paired with the ECLIs the system is supposed to find — runs in CI on every
+change and measures two things: does retrieval find the right rulings
+(recall), and do the source references in the answer match the passages that
+were provided. A change to chunking, the embedding model or the prompt is no
+longer a matter of "it feels better", but of a number going up or down.
+
+> The question to ask a RAG system isn't "does the answer sound good?", but
+> "can I trace every sentence back to the source?"
+
+The result is a system in which every answer is clickably traceable to its
+underlying passages, in which declining to answer works as cleanly as
+answering, and in which the quality of the whole chain is expressed as a
+number — again on every commit.
+
+## Why this matters for your organisation
+
+Every organisation that wants AI on its own documents — policy, contracts,
+case files, knowledge bases — runs into exactly these questions. Not "which
+model do we use", but: how do we guarantee answers are based on our sources,
+how do we make that verifiable for the user, and how do we measure whether
+the system is getting better rather than just different? The answers from
+this project — mandatory citations, refusal as a first-class outcome, an
+evaluation set in CI — transfer one to one.
+
+*The complete code and documentation are on [GitHub](https://github.com/datavakwerk/strafrecht-rag).*
+
+*Thinking about AI on your organisation's documents, but don't want a black
+box? [Book an intro call](mailto:datavakwerk@ruudjuffermans.nl) — I'm happy
+to take a look with you.*

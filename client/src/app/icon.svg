@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-260 -260 520 520" style="isolation:isolate">
+  <defs>
+    <radialGradient id="p0" gradientUnits="userSpaceOnUse" cx="95.26" cy="-205.00" r="335.41" gradientTransform="rotate(-13 95.26 -55)"><stop offset="0" stop-color="#fbfcfe"/><stop offset="0.5" stop-color="#a3c4f7"/><stop offset="1" stop-color="#2563eb"/></radialGradient>
+    <radialGradient id="p1" gradientUnits="userSpaceOnUse" cx="0" cy="-260.00" r="335.41" gradientTransform="rotate(-73 0 -110)"><stop offset="0" stop-color="#fbfcfe"/><stop offset="0.5" stop-color="#a3c4f7"/><stop offset="1" stop-color="#2563eb"/></radialGradient>
+    <radialGradient id="p2" gradientUnits="userSpaceOnUse" cx="-95.26" cy="-205.00" r="335.41" gradientTransform="rotate(-133 -95.26 -55)"><stop offset="0" stop-color="#fbfcfe"/><stop offset="0.5" stop-color="#a3c4f7"/><stop offset="1" stop-color="#2563eb"/></radialGradient>
+    <radialGradient id="p3" gradientUnits="userSpaceOnUse" cx="-95.26" cy="-95.00" r="335.41" gradientTransform="rotate(-193 -95.26 55)"><stop offset="0" stop-color="#fbfcfe"/><stop offset="0.5" stop-color="#a3c4f7"/><stop offset="1" stop-color="#2563eb"/></radialGradient>
+    <radialGradient id="p4" gradientUnits="userSpaceOnUse" cx="0" cy="-40.00" r="335.41" gradientTransform="rotate(-253 0 110)"><stop offset="0" stop-color="#fbfcfe"/><stop offset="0.5" stop-color="#a3c4f7"/><stop offset="1" stop-color="#2563eb"/></radialGradient>
+    <radialGradient id="p5" gradientUnits="userSpaceOnUse" cx="95.26" cy="-95.00" r="335.41" gradientTransform="rotate(-313 95.26 55)"><stop offset="0" stop-color="#fbfcfe"/><stop offset="0.5" stop-color="#a3c4f7"/><stop offset="1" stop-color="#2563eb"/></radialGradient>
+  </defs>
+  <circle cx="95.26" cy="-55" r="150" fill="url(#p0)" style="mix-blend-mode:darken"/>
+  <circle cx="0" cy="-110" r="150" fill="url(#p1)" style="mix-blend-mode:darken"/>
+  <circle cx="-95.26" cy="-55" r="150" fill="url(#p2)" style="mix-blend-mode:darken"/>
+  <circle cx="-95.26" cy="55" r="150" fill="url(#p3)" style="mix-blend-mode:darken"/>
+  <circle cx="0" cy="110" r="150" fill="url(#p4)" style="mix-blend-mode:darken"/>
+  <circle cx="95.26" cy="55" r="150" fill="url(#p5)" style="mix-blend-mode:darken"/>
+</svg>

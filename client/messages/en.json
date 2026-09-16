@@ -1,0 +1,604 @@
+{
+  "site": {
+    "title": "Ruud Juffermans — Data engineering & AI",
+    "titleTemplate": "%s | Ruud Juffermans",
+    "description": "Data engineer with a background at the Netherlands Aerospace Centre and the Dutch police. I build the data foundations that reporting and AI run on — modelled, tested and documented.",
+    "siteName": "Ruud Juffermans — Data engineering & AI"
+  },
+  "common": {
+    "cta": "Get in touch",
+    "contact": "Contact",
+    "login": "Log in",
+    "logout": "Log out",
+    "readMore": "Read more",
+    "backToBlog": "Back to blog",
+    "backToProjects": "Back to portfolio",
+    "readingTimeSuffix": "read",
+    "languageLabel": "Language",
+    "switchToEnglish": "English",
+    "switchToDutch": "Dutch",
+    "skipToContent": "Skip to content",
+    "themeLabel": "Theme",
+    "themeLight": "Light theme",
+    "themeDark": "Dark theme",
+    "themeSystem": "System preference",
+    "availableHero": "Open to new roles",
+    "availableFrom": "Open to new roles",
+    "proof": {
+      "nlr": "Data engineer at NLR",
+      "police": "Data & AI at the Dutch police",
+      "udemy": "241 students with a 4.2 rating on Udemy"
+    }
+  },
+  "nav": {
+    "projects": "Portfolio",
+    "blog": "Blog",
+    "mainNavLabel": "Main navigation",
+    "about": "About",
+    "contact": "Contact"
+  },
+  "home": {
+    "metaTitle": "Ruud Juffermans — Data engineering & AI",
+    "metaDescription": "Data engineer with a background at NLR and the Dutch police. Portfolio of open projects — a dbt warehouse, a Kafka streaming pipeline and a RAG system — plus articles on how I work.",
+    "hero": {
+      "eyebrow": "Data engineering & AI",
+      "title": "I build full-stack solutions with modern technology, following best practices",
+      "subtitle": "Data & AI Engineer with experience at NLR and the Dutch Police. I build modeled data warehouses, tested pipelines, and AI systems in environments where handling confidential and privacy-sensitive data with care is essential.",
+      "ctaPrimary": "Get in touch",
+      "ctaSecondary": "View my portfolio",
+      "toolsLabel": "Working daily with technology like"
+    },
+    "projects": {
+      "all": "All projects"
+    },
+    "services": {
+      "eyebrow": "What I do",
+      "slides": {
+        "data": {
+          "title": "Data engineering",
+          "subtitle": "I engineer scalable data platforms built around robust ingestion, orchestration, data modeling, distributed processing, and infrastructure that can handle changing schemas and growing workloads.",
+          "diagramAlt": "Architecture of a data platform in five layers: sources, ingestion, storage (raw, curated, consumption), processing and serving, with orchestration, governance and observability & cost spanning every layer.",
+          "learnMore": "More about data engineering"
+        },
+        "ai": {
+          "title": "AI engineering",
+          "subtitle": "I build production-ready AI systems with a focus on data privacy, traceability, evaluation and reliable data pipelines.",
+          "diagramAlt": "Architecture of an AI agent system: an input gateway with auth and input guardrails, an orchestrator agent that plans tasks and hands them to specialist agents, a tool layer (functions and MCP), memory and knowledge (vector store / RAG), output guardrails with a human in the loop and a critic loop, and observability and governance around it all.",
+          "learnMore": "More about AI engineering"
+        }
+      },
+      "service1Title": "Data engineering",
+      "service2Title": "AI & GenAI",
+      "flow": {
+        "ai": {
+          "src1": "Documents",
+          "src2": "Databases",
+          "src3": "FAQ & policy",
+          "hubLabel": "retrieval · guardrails",
+          "hubTitle": "AI assistant",
+          "out1Label": "with sources",
+          "out1Title": "Answer",
+          "out2Label": "automation",
+          "out2Title": "System action"
+        }
+      },
+      "carousel": {
+        "slide": "{index} of {total}"
+      }
+    },
+    "experience": {
+      "eyebrow": "Experience",
+      "title": "Where I've done this before",
+      "subtitle": "Two environments where a wrong figure has real consequences, and one where explaining is the whole job.",
+      "photoAlt": "Ruud Juffermans presenting.",
+      "items": [
+        {
+          "period": "2024",
+          "role": "Data Specialist - Cryptocurrency",
+          "org": "Politie Noord-Holland",
+          "body": "Data analysis, automation and AI within criminal law — under hard privacy and information-security requirements, where privacy by design is the starting point rather than an appendix."
+        },
+        {
+          "period": "2023",
+          "role": "Data Engineer",
+          "org": "Netherlands Aerospace Centre (NLR)",
+          "body": "Built a wide range of data projects in a research environment where the numbers are checked, and the pipelines behind them have to hold up to that."
+        },
+        {
+          "period": "Since 2020",
+          "role": "Course Instructor",
+          "org": "Udemy",
+          "body": "Courses that explain complex technology to people without a technical background: 241 students with a 4.2 rating. A dashboard nobody understands isn't a dashboard — and the same goes for a handover."
+        }
+      ],
+      "cta": "More about me"
+    },
+    "principles": {
+      "eyebrow": "How I work",
+      "title": "What you get when I join the team",
+      "subtitle": "Four habits that come back in every project on this site — and in the code behind them.",
+      "card1Title": "Foundations first",
+      "card1Body": "Most AI and reporting projects fail on the data, not the model. I start with the grain, the definitions and the tests — and only then with what sits on top.",
+      "card2Title": "Used to strict frameworks",
+      "card2Body": "At the police and in aerospace you work under hard privacy and information-security requirements. Privacy by design is how I start, not an afterthought.",
+      "card3Title": "Explaining is the job",
+      "card3Body": "Since 2020 I've explained complex technology on Udemy to people without a technical background: 241 students with a 4.2 rating. I do the same with stakeholders and teammates.",
+      "card4Title": "Tested, documented, handed over",
+      "card4Body": "Tests, CI and documentation are part of every project — check the repos. The goal is work a team can carry on with, not work that depends on me."
+    },
+    "underhood": {
+      "eyebrow": "Projects",
+      "viewProject": "View the project",
+      "github": "View on GitHub",
+      "projects": {
+        "digital-twin": {
+          "toggle": "AI Digital-twin",
+          "title": "An AI that speaks about me — only when it can cite me",
+          "sub": "A digital twin for this site: a LangGraph agent over my CV, projects and writing that streams cited answers, refuses when it has no source, stays under a daily cost cap, and pauses for my approval before it acts on my behalf.",
+          "codeNote": "fails closed",
+          "f1Title": "Guards before tokens",
+          "f1Body": "Prompt-injection, PII and off-topic screens run in plain Python before a single token is spent — every guard fails closed, never crashes.",
+          "f2Title": "Human in the loop",
+          "f2Body": "Drafting a message on my behalf is high-risk: the graph interrupts, queues it for my approval, and tells the visitor it's waiting for review.",
+          "f3Title": "Evals gate every change",
+          "f3Body": "Two labelled datasets against the real agent — tool selection ≥ 95%, task completion ≥ 90% — with failure injection to prove the retries hold."
+        },
+        "open-data-warehouse": {
+          "toggle": "Open data warehouse",
+          "title": "A star schema in the open, on data anyone can check",
+          "sub": "End-to-end ELT platform on Dutch open data: Python ingestion, dbt transformations and a documented Kimball star schema — with tests and CI on every pull request, built the way a platform team delivers it.",
+          "codeNote": "tested on every PR",
+          "f1Title": "Explicit grain",
+          "f1Body": "Two fact tables with different grains in one schema, each pinned down in a single sentence — because that's exactly where modelling goes wrong.",
+          "f2Title": "Tests and CI",
+          "f2Body": "dbt tests and docs run on every pull request; a broken model never reaches main.",
+          "f3Title": "Warehouse-agnostic",
+          "f3Body": "DuckDB in CI, Snowflake or Databricks with a profile switch — the modelling is the point, not the engine."
+        },
+        "ov-streaming-pipeline": {
+          "toggle": "OV streaming pipeline",
+          "title": "Real-time delays across Dutch public transport",
+          "sub": "Streaming pipeline on the national OV feed: vehicle positions flow through Kafka, delay aggregates are computed in five-minute windows, and a live map shows where the network runs late — right now.",
+          "codeNote": "streams, not batches",
+          "f1Title": "Kafka end to end",
+          "f1Body": "GTFS-realtime vehicle positions consumed through Redpanda, with a dead-letter queue for events that don't parse.",
+          "f2Title": "Windowed aggregates",
+          "f2Body": "Delay per line and station in five-minute tumbling windows — correct under late and duplicate events.",
+          "f3Title": "Live dashboard",
+          "f3Body": "A Streamlit map of current delays, fed straight from the stream."
+        },
+        "strafrecht-rag": {
+          "toggle": "Strafrecht AI RAG",
+          "title": "Ask questions of Dutch case law — with sources",
+          "sub": "RAG system over court rulings: semantic search across judgments, answers formulated by an LLM, and every claim traced back to the ECLI it came from.",
+          "codeNote": "no source, no answer",
+          "f1Title": "Citations by default",
+          "f1Body": "Every answer carries its ECLI references — from claim back to the underlying passage.",
+          "f2Title": "Honest refusal",
+          "f2Body": "No relevant passage retrieved means no answer. The system doesn't improvise case law.",
+          "f3Title": "Evaluated retrieval",
+          "f3Body": "Retrieval quality is measured against a test set with LangFuse tracing — not a demo that went well once."
+        }
+      }
+    },
+    "blog": {
+      "eyebrow": "Blog",
+      "title": "Latest articles",
+      "all": "All articles"
+    },
+    "cta": {
+      "title": "Looking for a data engineer or AI-specialist?",
+      "subtitle": "I'm open to new roles in data engineering and AI. Send me a message, or connect on LinkedIn.",
+      "primary": "Get in touch",
+      "secondary": "Connect on LinkedIn"
+    }
+  },
+  "about": {
+    "metaTitle": "About me — data engineer with a background at NLR and the Dutch police",
+    "metaDescription": "Data engineer and AI builder with 241 Udemy students at a 4.2 rating. Designed and built a data platform at the Netherlands Aerospace Centre and set up data-driven working at the Noord-Holland police. Open to new roles.",
+    "eyebrow": "About",
+    "name": "Ruud Juffermans",
+    "portraitAlt": "Portrait of Ruud Juffermans",
+    "intro1": "At the Noord-Holland police unit I set up data-driven working in a team that didn't have it yet. I mapped the data sources, built pipelines in Python and SQL, designed the data models and delivered the reports that detectives and managers now steer by. All of that happens under strict privacy and information-security requirements, with data where a wrong conclusion has real consequences.",
+    "intro2": "Before that I was a data engineer at the Netherlands Aerospace Centre (NLR), working on COMPASS, an EU project on digital product passports. I led requirements engineering with partners across Europe, made the architecture decisions for the data platform and built the MVP in an international Agile team. My degree in Business Data Management laid the groundwork: data modeling, data warehousing and BI.",
+    "intro3": "Alongside that work I spent four years creating Udemy courses on Python, SQL and full-stack development. Explaining complex technology to people without a technical background is the entire job there — and it's also what a data engineer on a team does most of the day. The same curiosity led me to AI: RAG, agents and retrieval evaluation, worked out in the projects on this site. I'm now looking for a team where I can build that data foundation and the AI layer on top of it, together.",
+    "pullQuote": "I've seen what happens when data and AI work — and what happens when the foundation is missing.",
+    "expertiseTitle": "Expertise",
+    "skills": {
+      "data": "Data engineering",
+      "ai": "AI & GenAI",
+      "engineering": "Engineering"
+    },
+    "experienceEyebrow": "Experience",
+    "experienceTitle": "Roles, and what I did there",
+    "experience": [
+      {
+        "period": "2025 – now",
+        "role": "Data Specialist - Cryptocurrency",
+        "org": "Noord-Holland Police",
+        "bullets": [
+          "Set up data-driven working from scratch: inventoried data sources, assessed their quality and translated the needs of operations, tactics and management into a concrete plan.",
+          "Built ETL pipelines in Python and SQL, dimensional data models and Power BI reports for operational and strategic decision-making.",
+          "Developed automated tooling that replaces manual analysis work, including for financial and cryptocurrency investigations.",
+          "Put governance in place — data quality, classification, documentation — and gave training to raise data literacy in the team."
+        ]
+      },
+      {
+        "period": "2024 – 2025",
+        "role": "Data Engineer",
+        "org": "Netherlands Aerospace Centre (NLR)",
+        "bullets": [
+          "Led requirements engineering for COMPASS, an EU-funded project on digital product passports: turned interviews with European partners into specifications.",
+          "Designed the data platform architecture — integrations, data models, data structures — and built and iteratively delivered the MVP in an international Agile team.",
+          "Built data transformations with dbt and developed Power BI dashboards for project stakeholders."
+        ]
+      },
+      {
+        "period": "2020 – 2024",
+        "role": "Course Creator",
+        "org": "Udemy",
+        "bullets": [
+          "Developed courses on Python, SQL, full-stack development and blockchain technology: 241 students with a 4.2 rating.",
+          "Built an education product independently: from audience analysis to iterative improvement based on student feedback."
+        ]
+      }
+    ],
+    "timelineEyebrow": "My path",
+    "timelineTitle": "From bookkeeping to data",
+    "timeline": [
+      {
+        "year": "2017",
+        "label": "Completed vocational degree in Business Administration, ROC van Amsterdam"
+      },
+      {
+        "year": "2019",
+        "label": "Started Computer Science — Business Data Management, Leiden University of Applied Sciences"
+      },
+      {
+        "year": "2020",
+        "label": "Published first Udemy courses"
+      },
+      {
+        "year": "2023",
+        "label": "Graduated, with a minor in Blockchain & Cryptocurrency Business, Law & IT"
+      },
+      {
+        "year": "2024",
+        "label": "Data Engineer at the Netherlands Aerospace Centre"
+      },
+      {
+        "year": "2025",
+        "label": "Data Specialist - Cryptocurrency at the Noord-Holland Police"
+      }
+    ],
+    "cta": {
+      "title": "Think I'd fit your team?",
+      "subtitle": "I'm open to new roles. Get in touch, or start with the projects to see how I work.",
+      "primary": "Get in touch",
+      "secondary": "View the projects"
+    }
+  },
+  "expertise": {
+    "allProjects": "All projects",
+    "view": "View project",
+    "repo": "Code on GitHub",
+    "approachEyebrow": "Approach",
+    "experienceEyebrow": "Experience",
+    "skillsEyebrow": "Works with",
+    "principlesEyebrow": "Principles",
+    "relatedEyebrow": "Projects",
+    "cta": {
+      "subtitle": "I'm looking for a team where I can do this work properly. A conversation is easily arranged.",
+      "primary": "Get in touch",
+      "secondary": "More about me"
+    },
+    "fields": {
+      "data": {
+        "metaTitle": "Data engineering — warehouses, pipelines and streaming",
+        "metaDescription": "How I approach data engineering: modelled warehouses, tested pipelines and streaming — with the experience at NLR and the Police and the projects that show it.",
+        "eyebrow": "Data engineering",
+        "title": "From scattered sources to one warehouse that adds up",
+        "intro": "I bring sources together into a modelled, tested data warehouse: pipelines that run every day, figures that are the same for every department, and reporting nobody has to assemble by hand anymore.",
+        "intro2": "That's the work I did as a data engineer at the Netherlands Aerospace Centre and as a data analyst at Politie Noord-Holland — two environments where a wrong figure has real consequences. The projects on this site show the same approach, with the code in the open.",
+        "approachTitle": "What a team can expect from me",
+        "approach": [
+          {
+            "title": "Model before building",
+            "body": "Grain and dimensions on paper first, SQL second. A documented star schema stays understandable after I've moved on."
+          },
+          {
+            "title": "Tests on every change",
+            "body": "Not-null, uniqueness and relationships as tests in the pipeline, with CI running them on every pull request. A mistake surfaces before it reaches a dashboard."
+          },
+          {
+            "title": "Batch and streaming",
+            "body": "Daily ELT where that's enough, Kafka and windows where figures have to be right within minutes — including a dead-letter queue and replay for the failure path."
+          },
+          {
+            "title": "Explainable to the business",
+            "body": "A warehouse isn't finished until the people using it understand it. Documentation and handover are part of the work, not an afterthought."
+          }
+        ],
+        "experienceTitle": "Where I did this",
+        "experience": [
+          {
+            "period": "2024",
+            "role": "Data Analyst",
+            "org": "Politie Noord-Holland",
+            "body": "Data analysis and automation within criminal law, under hard privacy and information-security requirements. Pipelines where privacy by design is the starting point, not an appendix."
+          },
+          {
+            "period": "2023",
+            "role": "Data Engineer",
+            "org": "Netherlands Aerospace Centre (NLR)",
+            "body": "A wide range of data projects in a research environment where the figures get checked — and where the pipelines behind them have to hold up to that."
+          },
+          {
+            "period": "Since 2020",
+            "role": "Instructor",
+            "org": "Udemy",
+            "body": "Courses on data and technology for people without a technical background: 241 students with a 4.2 rating. The same skill a team needs at every handover."
+          }
+        ],
+        "skills": [
+          "Data modeling",
+          "Kimball / star schema",
+          "dbt",
+          "SQL",
+          "Python",
+          "ELT pipelines",
+          "Kafka",
+          "Streaming",
+          "PostgreSQL",
+          "DuckDB",
+          "Docker",
+          "CI/CD",
+          "Azure",
+          "Power BI"
+        ],
+        "principles": [
+          "One definition per figure, the same for every department.",
+          "Mistakes surface in the pipeline, not in the dashboard.",
+          "Everything reproducible: from zero with one command."
+        ],
+        "relatedTitle": "Projects that show it",
+        "relatedSubtitle": "Two own projects, from raw source to working result — with the full approach and the code in the open.",
+        "ctaTitle": "A warehouse that adds up, for your team?"
+      },
+      "ai": {
+        "metaTitle": "AI engineering — assistants with sources, guardrails and evaluation",
+        "metaDescription": "How I approach AI engineering: RAG and agents that answer with citations, refuse honestly and only act with approval — with the experience at the Police and the projects that show it.",
+        "eyebrow": "AI engineering",
+        "title": "AI that answers with sources, and knows when to stay silent",
+        "intro": "I build AI systems for production: assistants that answer with citations, say honestly what they don't know, and only act where a person has approved it — with evaluation guarding every change.",
+        "intro2": "At Politie Noord-Holland I applied AI within criminal law, an environment where privacy and information security are not an afterthought. Most AI projects fail on the data, not the model; so I build the foundation first and the assistant second.",
+        "approachTitle": "What a team can expect from me",
+        "approach": [
+          {
+            "title": "Sources behind every claim",
+            "body": "An answer without a retrieved passage is no answer. Every claim points to the document or ruling it came from."
+          },
+          {
+            "title": "Guardrails before the model",
+            "body": "Prompt injection, PII and off-topic questions are caught in plain code before a single token is spent. Fail closed, never crash."
+          },
+          {
+            "title": "Human in the loop",
+            "body": "Actions with consequences — sending a message, changing something — wait for approval. A hard daily cost limit keeps the bill predictable."
+          },
+          {
+            "title": "Evaluation on every change",
+            "body": "Labelled datasets and thresholds in CI: retrieval recall, correct tool selection, task completion. A regression blocks the merge."
+          }
+        ],
+        "experienceTitle": "Where I did this",
+        "experience": [
+          {
+            "period": "2024",
+            "role": "Data Analyst",
+            "org": "Politie Noord-Holland",
+            "body": "Applied AI and automation within criminal law — where confidential and privacy-sensitive data is the norm and every outcome has to be traceable."
+          },
+          {
+            "period": "2023",
+            "role": "Data Engineer",
+            "org": "Netherlands Aerospace Centre (NLR)",
+            "body": "Built the data foundation AI applications have to stand on: clean, modelled and tested data in a research environment."
+          },
+          {
+            "period": "Since 2020",
+            "role": "Instructor",
+            "org": "Udemy",
+            "body": "Explaining complex technology to people without a technical background, 241 students with a 4.2 rating — including what AI can and cannot do."
+          }
+        ],
+        "skills": [
+          "LLMs",
+          "RAG",
+          "AI agents",
+          "LangGraph",
+          "LangChain",
+          "Retrieval evaluation",
+          "Guardrails",
+          "pgvector",
+          "LangFuse",
+          "Python",
+          "FastAPI",
+          "Document processing",
+          "Streaming (SSE)"
+        ],
+        "principles": [
+          "No source, no answer.",
+          "Guards in code, not in the prompt.",
+          "Risky actions only with human approval."
+        ],
+        "relatedTitle": "Projects that show it",
+        "relatedSubtitle": "Two own AI systems running in production — with guardrails, evaluation and the code in the open.",
+        "ctaTitle": "AI you'd dare to show a client?"
+      }
+    }
+  },
+  "contact": {
+    "metaTitle": "Contact — Ruud Juffermans",
+    "metaDescription": "Get in touch with Ruud Juffermans about a data engineering or AI role, or to talk shop about a project.",
+    "eyebrow": "Contact",
+    "title": "Let's talk",
+    "subtitle": "Hiring for a data or AI role, or want to compare notes on one of the projects? Leave a message or reach out directly.",
+    "form": {
+      "name": "Name",
+      "email": "Email",
+      "company": "Company or organisation (optional)",
+      "message": "Message",
+      "messagePlaceholder": "Tell me about the role, the team, or what you're building...",
+      "submit": "Send message",
+      "submitting": "Sending...",
+      "genericError": "Something went wrong"
+    },
+    "success": {
+      "title": "Message sent",
+      "body": "Thanks for your message! I'll get back to you as soon as possible, usually within 24 hours."
+    },
+    "direct": {
+      "title": "Direct contact",
+      "email": "me@ruudjuffermans.nl",
+      "linkedin": "LinkedIn",
+      "github": "GitHub",
+      "location": "Amsterdam, Netherlands",
+      "remote": "Based in Amsterdam. Open to hybrid and remote roles across the Netherlands."
+    }
+  },
+  "blog": {
+    "metaTitle": "Blog — Data engineering & AI",
+    "metaDescription": "Articles on data modelling, pipelines, CI for dbt, streaming on Kafka and RAG systems — written from the projects on this site.",
+    "eyebrow": "Blog",
+    "title": "Articles on data and AI",
+    "subtitle": "On what it really takes to build a data foundation that holds — written from the projects on this site.",
+    "empty": {
+      "title": "First articles coming soon",
+      "body": "I'm working on in-depth articles about data engineering and AI. Subscribe to the newsletter so you don't miss them."
+    },
+    "post": {
+      "ctaTitle": "Like how I think about this?",
+      "ctaBody": "I'm open to new roles in data engineering and AI. Let's talk.",
+      "ctaButton": "Get in touch",
+      "fallbackNotice": "This article hasn't been translated to English yet. You're reading the Dutch version."
+    },
+    "filters": {
+      "topicLabel": "Topic",
+      "projectLabel": "Project",
+      "all": "All",
+      "standalone": "Standalone",
+      "topics": {
+        "ai": "AI",
+        "data-engineering": "Data engineering"
+      },
+      "projects": {
+        "digital-twin": "AI Digital-twin",
+        "open-data-warehouse": "Open data warehouse",
+        "ov-streaming-pipeline": "OV streaming pipeline",
+        "strafrecht-rag": "Strafrecht-RAG"
+      },
+      "reset": "Show all",
+      "empty": {
+        "title": "No articles match this filter",
+        "body": "Try another topic or project, or show all articles."
+      },
+      "countOne": "1 article",
+      "countOther": "{count} articles"
+    }
+  },
+  "projects": {
+    "metaTitle": "Projects — Data & AI in practice",
+    "metaDescription": "Own projects that build the full chain: from raw source to a dashboard and a working AI application, with the code in the open.",
+    "eyebrow": "Projects",
+    "title": "What I build, and how",
+    "subtitle": "Own projects where I build the whole chain — from raw source to a working dashboard or AI application, with the full approach and the code in the open so you can see how I work.",
+    "view": "View project",
+    "repoLabel": "View the code on GitHub",
+    "empty": {
+      "title": "Projects in progress",
+      "body": "I'm working on write-ups. Check back soon, or reach out in the meantime."
+    },
+    "detail": {
+      "fallbackNotice": "This project hasn't been translated to English yet. You're reading the Dutch version."
+    }
+  },
+  "privacy": {
+    "metaTitle": "Privacy statement",
+    "metaDescription": "Privacy statement of ruudjuffermans.nl, the portfolio site of Ruud Juffermans.",
+    "title": "Privacy statement",
+    "lastUpdated": "Last updated: September 2026",
+    "sections": [
+      {
+        "title": "1. Who I am",
+        "content": "Ruud Juffermans, data engineer, based in Noord-Holland, Netherlands. This is my personal portfolio site. Email: ruudjuffermans@pm.me."
+      },
+      {
+        "title": "2. What data I collect",
+        "content": "Via the contact form: name, email address, optional company name and your message. Via the newsletter: email address. I use privacy-friendly analytics (no cookies, no personal data)."
+      },
+      {
+        "title": "3. Why I collect this data",
+        "content": "To answer your message and contact you. To send the newsletter you signed up for. To improve the website based on anonymized usage statistics."
+      },
+      {
+        "title": "4. How long I keep data",
+        "content": "Contact-form data is kept as long as needed to handle your message, up to a maximum of 12 months. Newsletter data is kept until you unsubscribe."
+      },
+      {
+        "title": "5. Sharing with third parties",
+        "content": "I don't share your data with third parties, except where needed to run the site: Proton (email sending) and Buttondown (newsletter). These processors operate under data-processing agreements."
+      },
+      {
+        "title": "6. Your rights",
+        "content": "You have the right to access, correct, delete and transfer your data. You can also object to processing. Contact ruudjuffermans@pm.me for any of these. You can also file a complaint with the Dutch Data Protection Authority."
+      },
+      {
+        "title": "7. Cookies",
+        "content": "This website doesn't use tracking cookies. No cookie banner is needed."
+      },
+      {
+        "title": "8. Changes",
+        "content": "This privacy statement may be updated. The latest version is always available on this page."
+      }
+    ]
+  },
+  "footer": {
+    "tagline": "Data engineering & AI",
+    "portraitAlt": "Portrait of Ruud Juffermans",
+    "siteHeading": "Site",
+    "elsewhereHeading": "Elsewhere",
+    "newsletterHeading": "Newsletter",
+    "newsletterBody": "Occasional notes on data engineering and AI, written from the projects — never more than once a month.",
+    "newsletterLabel": "Email address",
+    "newsletterPlaceholder": "you@email.com",
+    "newsletterSubmit": "Subscribe",
+    "newsletterSuccess": "Subscribed!",
+    "newsletterError": "Something went wrong. Please try again.",
+    "siteLinks": {
+      "projects": "Projects",
+      "blog": "Blog",
+      "about": "About",
+      "contact": "Contact",
+      "privacy": "Privacy"
+    },
+    "elsewhereLinks": {
+      "linkedin": "LinkedIn",
+      "github": "GitHub",
+      "email": "Email"
+    },
+    "copyright": "© {year} Ruud Juffermans"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist (anymore). The address may have changed, or there's a typo in the link.",
+    "backHome": "Back to home"
+  },
+  "diagram": {
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "reset": "Fit to view",
+    "expand": "Full screen",
+    "collapse": "Close"
+  }
+}

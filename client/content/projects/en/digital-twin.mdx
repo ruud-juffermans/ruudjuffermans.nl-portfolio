@@ -1,0 +1,62 @@
+---
+title: "Digital twin: an AI agent that answers for me — with sources"
+industry: "Own project"
+summary: "A LangGraph agent over my CV, projects and writing that answers visitors' questions in a streaming chat: every claim cited, refusal when there is no source, a hard daily cost cap, and human approval before it acts on my behalf."
+tags: ["GenAI", "Agents", "LLM", "Python"]
+repo: "https://github.com/datavakwerk/digital-twin"
+accent: "#F59E0B"
+stats:
+  - { label: "Guards", value: "Fail closed, no model" }
+  - { label: "Eval gate", value: "95% tools · 90% tasks" }
+  - { label: "Risky actions", value: "Human approval" }
+---
+
+*Own project, built to show how I put an LLM agent into production responsibly. The interesting part isn't the chat — it's everything around the model that makes it safe to leave running unattended.*
+
+## What it is
+
+A "digital twin" for this site: an assistant that answers questions about my work — what I built, how I approach a problem, whether I'm open to a role — grounded in my actual CV, project write-ups and blog posts. It streams its answer, cites the document each claim came from, and says so when it doesn't know.
+
+The rules it is designed around are the same ones I put on any AI system:
+
+1. **No source, no claim.** Citations are native to the answer, and a citation must name a real knowledge document or it is dropped.
+2. **Fail closed.** Every guard, budget and validation step ends in a polite refusal, never a crash and never a guess.
+3. **Nothing irreversible without a human.** The one tool that acts on my behalf pauses the agent until I approve it.
+
+## The design
+
+The server is FastAPI with a LangGraph agent orchestrating one chat turn as a small state machine:
+
+- **Guard input** — deterministic Python, no model involved: a prompt-injection screen, a sensitive-number check so nobody pastes a card number into a chat, and a pattern screen for clearly off-topic requests. All of it runs before a single token is spent.
+- **Generate** — the only node that touches a model, through an OpenAI-compatible client over httpx. The knowledge base rides in the system prompt as a cached prefix, so repeat turns are cheap; the provider is a config switch (Gemini, OpenAI, DeepSeek, Kimi).
+- **Tools** — a narrow set with strict schemas: search the knowledge base, report my availability, and draft a contact message. At most three tool rounds per turn.
+- **Request approval** — drafting a contact message is marked high-risk. The graph interrupts, the request is queued durably for me to approve through an admin endpoint, and the visitor is told it's waiting for review.
+- **Verify** — post-checks after the answer: a long factual answer without any citation is flagged as a hallucination risk, and the turn's cost is added to a daily budget that refuses politely once the cap is hit.
+
+The client is a small React app that reads the server-sent events and renders the answer as it streams, with the citations as source chips.
+
+## Data platform
+
+Everything the agent does is recorded in Postgres: conversation checkpoints per thread, the approval queue, a turn log with per-message cost telemetry (model, tokens, cache hits, cost, latency), a budget ledger that makes the daily cap survive a restart, and a guard incident log. Knowledge documents are chunked by heading, hashed and embedded into pgvector; the sync is incremental, so only changed paragraphs are re-embedded and the search tool ranks by cosine distance instead of term overlap.
+
+## Quality is measured, not hoped for
+
+Two labelled datasets run against the real agent graph: 12 tool-selection cases (does the agent reach for the right tool, and never a high-risk one it shouldn't) and 11 task-completion cases (does the answer contain what it must, cite when it must, and refuse when it must). Thresholds are 95% and 90%; a run below that fails. A failure-injection mode drops every other request to prove the client's retries absorb it. Alongside that: 58 unit and integration tests and ruff on every push.
+
+## Points of attention
+
+- Rate limiting per visitor and strict request validation keep the public endpoint from being an open wallet.
+- Prompt caching and a cheap default provider keep a day of conversations under a couple of dollars — and the cap makes sure of it.
+- The assistant speaks *about* me, never *for* me: anything that reaches my inbox passes through my approval first.
+
+## In the repo
+
+- Agent graph with typed state, deterministic routing and per-node latency tracing
+- Input and output guards, daily budget guard, human-approval interrupt
+- Streaming SSE endpoint with native citations and per-message telemetry
+- Postgres data platform: alembic migrations, checkpointer, approval queue, turn log, pgvector search
+- Eval datasets, runner with thresholds and failure injection, CI on every push
+
+## Technology
+
+Python, FastAPI, LangGraph, Postgres + pgvector, React, GitHub Actions

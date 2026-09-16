@@ -1,0 +1,246 @@
+/* Registered so --amplitude/--scale/--spin interpolate inside the keyframes. */
+@property --amplitude {
+  syntax: "<length>";
+  initial-value: 0px;
+  inherits: false;
+}
+
+@property --scale {
+  syntax: "<number>";
+  initial-value: 1;
+  inherits: false;
+}
+
+@property --spin {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* Mobile default: centered behind the hero text, deliberately oversized so
+   the expanded circles overflow the screen edges (the hero clips them), and
+   toned down with opacity + blur so the copy stays readable. */
+.pattern {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 640px;
+  height: 640px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0.2;
+}
+
+/* Desktop: full-strength pattern parked on the right, as before. */
+@media (min-width: 900px) {
+  .pattern {
+    left: auto;
+    right: -120px;
+    transform: translateY(-50%);
+    opacity: 1;
+  }
+}
+
+/* Past 1300px, track the centered content instead of the viewport edge so
+   the pattern stops drifting right. 50% + 130px equals the position that
+   right: -120px yields at exactly 1300px wide, so there is no jump. */
+@media (min-width: 1300px) {
+  .pattern {
+    right: auto;
+    left: calc(50% + 130px);
+  }
+}
+
+/* Past 1360px the hero container and text column widen (see the home page),
+   so the pattern moves right by the same amount the text column's end does:
+   0px at 1360px, levelling off at 70px from 1500px up. */
+@media (min-width: 1360px) {
+  .pattern {
+    left: calc(50% + 130px + min(70px, (100vw - 1360px) / 2));
+  }
+}
+
+.circle {
+  position: absolute;
+  height: 100px;
+  width: 100px;
+  border-radius: 50%;
+  /* Light scheme: near-white -> brand blue (#2563eb), darken blend so the
+     white end melts into the page background. */
+  background: radial-gradient(
+    circle at 50% 0%,
+    oklch(0.99 0.003 262),
+    oklch(0.8 0.1 258),
+    oklch(0.546 0.245 262.88)
+  );
+  mix-blend-mode: darken;
+  /* --base is the petal's fixed slot in the flower; --spin is animated on
+     desktop and stays 0 on mobile, so --angle reduces to --base there. */
+  --base: 90deg;
+  --spin: 0deg;
+  --angle: calc(var(--base) + var(--spin));
+  --amplitude: 175px;
+  --scale: 1.5;
+  --offset: 30deg;
+  transform: translate(
+      calc(cos(var(--angle)) * var(--amplitude)),
+      calc(sin(var(--angle)) * var(--amplitude) * -1)
+    )
+    scale(var(--scale)) rotate(calc(-1 * var(--angle) + 17deg));
+  animation: expand 4.01s cubic-bezier(0.8, 0, 0.2, 1) infinite alternate;
+}
+
+/* Dark scheme: page-bg navy -> brand blue (#60a5fa), lighten blend. */
+:global([data-mui-color-scheme="dark"]) .circle {
+  background: radial-gradient(
+    circle at 50% 0%,
+    oklch(0.1706 0.0284 267.36),
+    oklch(0.4 0.14 259),
+    oklch(0.707 0.165 254.62)
+  );
+  mix-blend-mode: lighten;
+}
+
+.circle:nth-child(1) {
+  --base: calc(0deg + var(--offset));
+}
+.circle:nth-child(2) {
+  --base: calc(60deg + var(--offset));
+}
+.circle:nth-child(3) {
+  --base: calc(120deg + var(--offset));
+}
+.circle:nth-child(4) {
+  --base: calc(180deg + var(--offset));
+}
+.circle:nth-child(5) {
+  --base: calc(240deg + var(--offset));
+}
+.circle:nth-child(6) {
+  --base: calc(300deg + var(--offset));
+}
+
+/* Mobile keyframes: the original steady breathing, unchanged. */
+@keyframes expand {
+  0% {
+    --amplitude: 150px;
+    --scale: 1;
+  }
+  50% {
+    --amplitude: 100px;
+    --scale: 3;
+  }
+  100% {
+    --amplitude: 150px;
+    --scale: 3;
+  }
+}
+
+/* Desktop: four acts in the first half, then a long calm.
+   1. Slow turn + breathe — gentle amplitude swing under a barely-moving spin.
+   2. Grand expansion — the ring flung to its widest (350px) while the orbs
+      swell toward their expansion ceiling (scale 4), still turning slowly.
+   3. Burst — the spin fires most of two full turns in ~1.5s at the extreme
+      bloom size (scale 5), then flings back out.
+   4. Settle — ease into the resting pose, then breathe quietly for the whole
+      second half of the loop with only a creeping residual turn.
+   Total spin ends at 720deg (two full turns), so 100% renders identically
+   to 0% and the loop is seamless. All six petals share the exact same
+   phase; the hero's overflow:hidden clips the widest poses at the edges. */
+@media (min-width: 900px) {
+  .circle {
+    animation: orbitBloom 24s ease-in-out infinite;
+  }
+}
+
+@keyframes orbitBloom {
+  0% {
+    --amplitude: 150px;
+    --scale: 1.1;
+    --spin: 0deg;
+  }
+  /* act 1: breathe under a slow turn */
+  6% {
+    --amplitude: 220px;
+    --scale: 0.9;
+    --spin: 15deg;
+  }
+  12% {
+    --amplitude: 160px;
+    --scale: 1.4;
+    --spin: 40deg;
+  }
+  /* act 2: grand expansion — widest ring, orbs swelling, still turning slowly */
+  17% {
+    --amplitude: 250px;
+    --scale: 4;
+    --spin: 75deg;
+  }
+  /* hold the wide pose for a beat as the orbs peak */
+  25% {
+    --amplitude: 225px;
+    --scale: 4.1;
+    --spin: 110deg;
+  }
+  /* draw back in and gather toward the center */
+  31% {
+    --amplitude: 120px;
+    --scale: 1;
+    --spin: 150deg;
+  }
+  35% {
+    --amplitude: 70px;
+    --scale: 2;
+    --spin: 190deg;
+  }
+  /* act 3: the burst — most of two turns in ~1.5s at full bloom */
+  41% {
+    --amplitude: 150px;
+    --scale: 5;
+    --spin: 620deg;
+  }
+  /* release: fling back out as the spin runs down */
+  46% {
+    --amplitude: 175px;
+    --scale: 1.6;
+    --spin: 690deg;
+  }
+  /* act 4: settle into the resting pose */
+  50% {
+    --amplitude: 150px;
+    --scale: 1.05;
+    --spin: 700deg;
+  }
+  /* quiet breathing for the whole second half, with a creeping residual
+     turn that completes the second revolution by the loop's end */
+  62% {
+    --amplitude: 165px;
+    --scale: 0.95;
+    --spin: 706deg;
+  }
+  75% {
+    --amplitude: 145px;
+    --scale: 1.15;
+    --spin: 712deg;
+  }
+  88% {
+    --amplitude: 155px;
+    --scale: 0.95;
+    --spin: 717deg;
+  }
+  /* 720deg = two full turns -> identical pose to 0%, so the loop is seamless */
+  100% {
+    --amplitude: 150px;
+    --scale: 1.1;
+    --spin: 720deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .circle {
+    animation: none;
+  }
+}

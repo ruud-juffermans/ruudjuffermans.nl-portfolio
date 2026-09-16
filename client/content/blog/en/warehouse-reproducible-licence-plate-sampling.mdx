@@ -1,0 +1,340 @@
+---
+title: "One licence-plate range, three datasets: reproducible sampling for a warehouse"
+date: "2026-09-13"
+excerpt: "The RDW publishes roughly 58 million rows about Dutch vehicles, spread over three datasets that all key on the licence plate. Sample each one on its own and every referential-integrity test in the warehouse fails. This is the sampling rule I settled on instead: one sorted plate range, shared by every dataset, written to a manifest, and reused in CI with one row added on purpose."
+tags: ["Engineering", "dbt", "Data Engineering"]
+topic: "data-engineering"
+project: "open-data-warehouse"
+---
+In [the open-data warehouse](/blog/open-data-warehouse-met-dbt) I mentioned
+that running the ingestion twice gives the same result. This post is about
+the one decision that makes that sentence true.
+
+The RDW's three big datasets are together roughly 58 million rows, and
+`make ingest` takes a bounded snapshot of that. *How* it takes that snapshot
+turned out to be the most important choice in the ingestion layer, and it is
+a choice most "download a sample" scripts get wrong in the same way.
+
+## Three samples, three populations
+
+The sources are three Socrata datasets on `opendata.rdw.nl`, every one of
+them keyed on `kenteken`, the licence plate:
+
+```python
+VOERTUIGEN = "m9d7-ebf2"
+BRANDSTOF = "8ys7-d773"
+GEBREKEN_GECONSTATEERD = "a34c-vvps"
+```
+
+Vehicles (one row per plate, 98 columns), fuel (one row per plate per fuel
+sequence number) and inspection defects (one row per defect found per
+inspection). A fourth dataset, `hx2c-gt7k`, is the reference list of defect
+codes: 1,006 rows, always fetched in full.
+
+The obvious sampling rule is "take the first 500,000 rows of each". It is
+wrong, and the reason is the grain. The defects set has many rows per
+vehicle, so its first 500,000 rows cover a much narrower band of plates than
+the first 500,000 vehicles do. Three independent prefixes give three vehicle
+populations that only partly overlap: fuel rows and defect rows point at
+plates that are not in the vehicle set. And that is exactly what the staging
+tests check:
+
+```yaml
+  - name: stg_rdw__brandstof
+    ...
+    columns:
+      - name: kenteken
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_rdw__voertuigen')
+                field: kenteken
+```
+
+The same `relationships` test sits on `stg_rdw__gebrek_constateringen.kenteken`,
+and further down on `fct_gebrek_constatering.voertuig_key` towards
+`dim_voertuig`. Under independent sampling all of them fail on hundreds of
+thousands of rows, and the failure says nothing about the model. It says the
+sample was taken wrong.
+
+![Three independent samples barely overlap; one plate range cut through all three gives a warehouse whose keys actually join](/images/blog/warehouse-reproducible-licence-plate-sampling/warehouse-sampling-1-three-prefixes-vs-one-range.svg "Three independent samples barely overlap; one plate range cut through all three gives a warehouse whose keys actually join.")
+
+## One range, shared by every dataset
+
+The fix is to sample the *vehicle population*, not the rows. Decide once
+which plates are in, then fetch every dataset for exactly those plates.
+Socrata sorts server-side and pages by offset, so "which plates" can be
+expressed as a range on the sorted vehicle set: the plate at position 0 and
+the plate at position N−1.
+
+```python
+def kenteken_at(session, offset: int) -> str:
+    """Het kenteken op positie `offset` in de op kenteken gesorteerde voertuigenset."""
+    rows = get_json(
+        session,
+        f"{BASE}/resource/{VOERTUIGEN}.json",
+        {"$select": "kenteken", "$order": "kenteken", "$offset": str(offset), "$limit": "1"},
+    )
+    if not rows:
+        raise RuntimeError(f"geen kenteken op offset {offset}")
+    return rows[0]["kenteken"]
+```
+
+Two calls, one row each, and the range is known before a single data row is
+downloaded:
+
+```python
+    kenteken_min = kenteken_at(session, 0)
+    kenteken_max = kenteken_at(session, sample_size - 1)
+    where = f"kenteken >= '{kenteken_min}' AND kenteken <= '{kenteken_max}'"
+```
+
+That `where` string is handed, unchanged, to all three fetches. The only
+thing that differs per dataset is the sort order, chosen so that paging is
+stable within the range:
+
+```python
+    taken = [
+        {
+            "bestand": "rdw_gekentekende_voertuigen.parquet",
+            "dataset_id": VOERTUIGEN,
+            ...
+            "order": "kenteken",
+            "where": where,
+        },
+        {
+            "bestand": "rdw_brandstof.parquet",
+            "dataset_id": BRANDSTOF,
+            ...
+            "order": "kenteken,brandstof_volgnummer",
+            "where": where,
+        },
+        {
+            "bestand": "rdw_geconstateerde_gebreken.parquet",
+            "dataset_id": GEBREKEN_GECONSTATEERD,
+            ...
+            "order": "kenteken,meld_datum_door_keuringsinstantie",
+            "where": where,
+        },
+        {
+            "bestand": "rdw_gebreken.parquet",
+            "dataset_id": GEBREKEN_CODES,
+            ...
+            "order": "gebrek_identificatie",
+            "where": None,
+        },
+    ]
+```
+
+Each fetch pages through the API in pages of 50,000, and the `where` clause
+is repeated on every page. Note the reference list at the bottom:
+`"where": None`. Filtering a code list to "codes that happen to occur in the
+sample" only manufactures false referential errors, so it comes along whole.
+
+With `SAMPLE_SIZE` at its default of 500,000 the run lands on the range
+`0001TJ` to `10ZFXT`: 500,000 vehicles, 443,167 fuel rows, 1,333,714 defect
+rows. The checks in `docs/data.md` on that run come out the way the design
+says they should: every fuel row and every defect row points at a vehicle in
+the snapshot, 0 orphans in both.
+
+## What the manifest buys you
+
+The range is deterministic: sort on `kenteken`, fixed offsets, so the same
+`SAMPLE_SIZE` against the same source gives the same plates. That is worth
+exactly as much as you can prove, which is why the range is written down.
+Before each fetch the script asks the API how many rows the selection
+*should* return, compares that with what it wrote, and records both in
+`data/raw/_manifest.json`:
+
+```python
+        verwacht = count(session, task["dataset_id"], task["where"])
+        ...
+        if geschreven != verwacht:
+            log(f"  LET OP: {geschreven:,} geschreven vs {verwacht:,} verwacht")
+
+        update_manifest(
+            {
+                "bestand": task["bestand"],
+                ...
+                "snapshotdatum": datum,
+                "selectiequery": {
+                    "$order": task["order"],
+                    "$where": task["where"],
+                },
+                "rijen": geschreven,
+                "rijen_in_bron_bij_selectie": verwacht,
+                "kolommen": len(cols),
+            }
+        )
+```
+
+The parquet files stay out of git; the manifest is committed. The entry for
+the vehicle set in the current snapshot:
+
+```json
+    {
+      "bestand": "rdw_gekentekende_voertuigen.parquet",
+      "bron": "RDW open data",
+      "omschrijving": "RDW gekentekende voertuigen",
+      "dataset_id": "m9d7-ebf2",
+      "url": "https://opendata.rdw.nl/resource/m9d7-ebf2.json",
+      "snapshotdatum": "2026-07-29",
+      "selectiequery": {
+        "$order": "kenteken",
+        "$where": "kenteken >= '0001TJ' AND kenteken <= '10ZFXT'"
+      },
+      "rijen": 500000,
+      "rijen_in_bron_bij_selectie": 500000,
+      "kolommen": 98
+    }
+```
+
+Three things fall out of this. The ingest is rerunnable without thinking:
+`make all` only ingests when the manifest is missing, and `make clean`
+removes the parquet but keeps the manifest. Scaling is one knob:
+`make ingest-rdw SAMPLE_SIZE=2000000` moves the upper bound, and fuel and
+defects follow because they never had a sample size of their own (the full
+set is around 16.8 million plates and about 11 GB). And the manifest diffs:
+a new snapshot is a `git diff` on one JSON file, where I can see whether the
+range moved and whether `rijen` and `rijen_in_bron_bij_selectie` still
+agree. A mismatch there is a paging bug in my code, not a data problem.
+
+The honest caveat is in the module docstring: reproducible "zolang de bron
+niet wijzigt", as long as the source does not change. The RDW set grows, so
+the plate at offset 499,999 drifts over time. The manifest does not stop
+that; it makes it visible.
+
+## The CI fixtures and the one row I put in on purpose
+
+CI does not touch the network: `DBT_RAW_DIR=tests/fixtures` points the same
+dbt sources at a small, checked-in copy of `data/raw/` with identical file
+names and schema (see the [CI post](/blog/ci-voor-een-dbt-project)). What
+matters here is how that copy is sampled, because the fixtures have the same
+problem as the ingest, one level down.
+
+`scripts/make_fixtures.py` uses the same trick: choose the plates first, then
+filter the other RDW files on that set. It works on local parquet with
+DuckDB, so "the set" can be a literal list rather than a range:
+
+```python
+    extra = ", ".join(f"('{k}')" for k in EXTRA_KENTEKENS)
+    con.execute(
+        f"""
+        create table kentekens as
+        select kenteken from (
+            select kenteken from {bron('rdw_gekentekende_voertuigen.parquet')}
+            order by kenteken
+            limit {aantal}
+        )
+        union
+        select kenteken from (values {extra}) as t(kenteken)
+        """
+    )
+```
+
+```python
+    for naam in (
+        "rdw_gekentekende_voertuigen.parquet",
+        "rdw_brandstof.parquet",
+        "rdw_geconstateerde_gebreken.parquet",
+    ):
+        rijen[naam] = schrijf(
+            con,
+            naam,
+            f"select * from {bron(naam)} where kenteken in (select kenteken from kentekens)",
+        )
+```
+
+The default is 5,000 plates, about 1.7 MB in git: 5,001 vehicle rows, 4,600
+fuel rows, 16,670 defect rows. That 5,001 is the `union` at work.
+
+The whole source contains exactly one fully duplicated row: plate `02BND8`,
+inspection on 2026-03-03 at 16:39, defect code 205, identical on all eight
+columns. It is in the source, so it stays in `data/raw/`, which is meant to be
+a literal copy. The dedup lives in staging:
+
+```sql
+select *
+from hernoemd
+qualify row_number() over (
+    partition by kenteken, meld_datum, meld_tijd, gebrek_identificatie
+    order by soort_erkenning_code
+) = 1
+```
+
+With that `qualify`, `stg_rdw__gebrek_constateringen` has 1,333,713 rows
+instead of 1,333,714 and the grain test passes. Now look at where the
+duplicate sits in the sorted plate order:
+
+```python
+# Deze rij is op alle acht kolommen dubbel en is de enige in de hele bron. Hij staat op
+# positie 73.926 in de op kenteken gesorteerde set en valt dus buiten elke redelijke
+# prefix. Zonder hem test CI de dedup uit commit 2 niet: je kunt de `qualify` weghalen
+# en de build blijft groen. Daarom expliciet erbij.
+EXTRA_KENTEKENS = ["02BND8"]
+```
+
+Position 73,926. No prefix small enough to live in git will reach it.
+Without it, CI does not test the dedup at all: delete the `qualify`, the
+grain test still passes on the fixtures, and the build stays green while the
+real build is broken. So the plate is added by hand, the `in (...)` filter
+pulls its fuel and defect rows along, and the fixture report records the
+splice:
+
+```json
+  "aantal_kentekens": 5000,
+  "extra_kentekens": [
+    "02BND8"
+  ],
+  "kenteken_grens": "02BND8",
+```
+
+The general rule inside the specific one: a fixture is not a smaller copy
+of the data, it is a smaller copy *plus every case the code exists to
+handle*. If a branch handles a condition the fixture never produces, a green
+CI run says nothing about it. The comment names the branch, so whoever
+"cleans up" the odd extra plate knows what they are removing.
+
+![The only duplicated row sits far outside the fixture's window, so the test data would never have contained it by accident](/images/blog/warehouse-reproducible-licence-plate-sampling/warehouse-sampling-2-where-the-duplicate-lives.svg "The only duplicated row sits far outside the fixture's window, so the test data would never have contained it by accident.")
+
+## What a contiguous plate range is not
+
+A sorted range is a *consistent* sample. It is not a *random* one.
+
+Dutch plates are issued in series, and series correlate with vehicle type;
+the repo lists it among its known pitfalls: the RDW sample is not
+representative by type. The mart that sets the sample next to the CBS fleet
+figures, `mart_rdw_cbs_aansluiting`, takes that seriously. It compares
+*shares* per vehicle type rather than counts, because the sample is about
+3.6% of the fleet, and it keeps vehicle types with no CBS counterpart out of
+both numerator and denominator.
+
+The fixtures show the same effect at small scale. `dim_brandstof` has 8 fuel
+types on the full snapshot and 7 in CI, because "Alcohol" does not occur in
+the first 5,000 plates; the model description warns against a row-count test
+on that dimension for exactly this reason. A prefix loses the tail of every
+distribution.
+
+So what is the range good for? Whether the grain holds, whether every
+foreign key resolves, whether the SCD2 municipality join lands on the right
+version, whether the dedup and the casts do what they claim. Those are
+questions about the *logic*, and logic is tested on a population you know
+the exact contents of. It is not good for a statistic about the Dutch fleet
+you would defend in front of someone; for that you take the full set, or a
+properly stratified sample, and you say so in the mart.
+
+## Takeaways
+
+- Sample the population, not the rows. When datasets share a key, decide the
+  key set once and fetch every dataset for that set; otherwise your
+  referential tests are testing your sampler.
+- Make the sample a function of one number and one sort order, and commit
+  the resulting range next to what the source said it would return. A range
+  you can diff is a range you can trust.
+- A fixture must contain every case the code handles, even when the case
+  lives at position 73,926. If a branch is not in the fixture, CI is not
+  testing it, and a comment should say which branch that is.
+- A deterministic sample is consistent, reproducible, and biased. Good for
+  testing logic; not a substitute for a random sample when the answer is a
+  number about the world.

@@ -1,0 +1,78 @@
+---
+title: "RAG over rechterlijke uitspraken: elk antwoord met bron, of geen antwoord"
+date: "2026-08-08"
+excerpt: "Een taalmodel dat overtuigend klinkt is makkelijk. Een taalmodel dat alleen beweert wat het kan bewijzen, is werk. Ik bouwde een RAG-systeem over uitspraken van Rechtspraak.nl waarin elke bewering terugverwijst naar de exacte passage — en 'geen bron gevonden' een volwaardig antwoord is."
+tags: ["Project", "GenAI", "RAG"]
+topic: "ai"
+project: "strafrecht-rag"
+---
+Het probleem met taalmodellen is niet dat ze fouten maken — dat doen mensen
+ook. Het probleem is dat ze fouten maken met dezelfde stelligheid als waarmee
+ze gelijk hebben. In een demo is dat vervelend; in een serieuze omgeving is
+het diskwalificerend. Een jurist die één verzonnen verwijzing vindt, vertrouwt
+daarna geen enkel antwoord meer. En terecht.
+
+Juridische tekst is daarmee de perfecte proeftuin: nergens wordt een
+verzonnen bron sneller ontmaskerd dan bij een ECLI-nummer dat niet bestaat.
+Daarom bouwde ik **`strafrecht-rag`**: een RAG-systeem (Retrieval-Augmented
+Generation) over rechterlijke uitspraken van Rechtspraak.nl, ontworpen rond
+twee regels die niet onderhandelbaar zijn.
+
+1. **Elke bewering krijgt een ECLI-verwijzing.** Van antwoord terug naar de
+   exacte passage in de exacte uitspraak. Geen black box.
+2. **Geen relevante bron, geen antwoord.** "Geen bron gevonden" is een
+   volwaardige uitkomst, geen foutmelding.
+
+## De oplossing: drie lagen, elk apart testbaar
+
+**Ingest.** Een client haalt uitspraken op via de Open Data-interface van
+Rechtspraak.nl — met rate limiting en retries, want een publieke API
+respecteer je — en parseert de ruwe XML naar één genormaliseerd model: ECLI,
+instantie, datum, rechtsgebied en de tekstsecties.
+
+**Index.** De tekst wordt opgedeeld in overlappende chunks, mét behoud van
+sectie- en paragraafnummers. Dat detail is de helft van het systeem: alleen
+daardoor kan een antwoord later exact terugwijzen naar zijn plek in de bron,
+in plaats van vaag naar "ergens in deze uitspraak". De chunks worden
+batchgewijs geëmbed en opgeslagen in een vector store, met metadata om te
+filteren op instantie, datum en rechtsgebied.
+
+**Query.** De vraag wordt geëmbed, de best passende passages worden
+opgehaald, en de prompt dwingt het model te antwoorden uitsluitend op basis
+van die passages — met per bewering een ECLI-verwijzing, en een expliciet
+pad voor "hier is geen bron voor". Het model mag niets weten dat de
+retrieval niet heeft aangeleverd.
+
+## Kwaliteit is gemeten, niet gehoopt
+
+De vraag "werkt het?" is bij RAG-systemen berucht vaag, dus die is hier
+vervangen door een meting. Een vaste evaluatieset — vragen met de ECLI's die
+het systeem hoort te vinden — draait in CI bij elke wijziging, en meet twee
+dingen: vindt de retrieval de juiste uitspraken (recall), en kloppen de
+bronverwijzingen in het antwoord met de passages die zijn aangeleverd. Een
+wijziging aan chunking, embeddingmodel of prompt is daarmee geen kwestie van
+"het voelt beter", maar van een cijfer dat omhoog of omlaag gaat.
+
+> De vraag aan een RAG-systeem is niet "klinkt het antwoord goed?", maar
+> "kan ik elke zin terugvinden in de bron?"
+
+Het resultaat is een systeem waarin elk antwoord klikbaar herleidbaar is tot
+de onderliggende passages, waarin de weigering om te antwoorden net zo
+netjes werkt als het antwoord zelf, en waarin de kwaliteit van de keten in
+een getal is uit te drukken — bij elke commit opnieuw.
+
+## Waarom dit relevant is voor jouw organisatie
+
+Elke organisatie die met AI op eigen documenten aan de slag wil — beleid,
+contracten, dossiers, kennisbanken — loopt tegen exact deze vragen aan.
+Niet "welk model gebruiken we", maar: hoe borgen we dat antwoorden op onze
+bronnen gebaseerd zijn, hoe maken we dat controleerbaar voor de gebruiker,
+en hoe meten we of het systeem beter wordt in plaats van anders? De
+antwoorden uit dit project — verplichte bronvermelding, weigeren als
+volwaardige uitkomst, een evaluatieset in CI — zijn één-op-één overdraagbaar.
+
+*De volledige code en documentatie staan op [GitHub](https://github.com/datavakwerk/strafrecht-rag).*
+
+*Denk je na over AI op de documenten van jouw organisatie, maar wil je geen
+black box? [Plan een kennismaking](mailto:datavakwerk@ruudjuffermans.nl) —
+dan kijk ik graag een keer mee.*

@@ -1,0 +1,32 @@
+# Portfolio site — a CLIENT-ONLY deployment (the Next.js site). Its backend
+# (contact form, newsletter, page-view analytics + their admin API) lives in
+# the shared platform server (../ruudjuffermans-server → api.ruudjuffermans.nl)
+# as the "website" module.
+services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client at build time; the browser calls the platform
+        # API cross-origin (its CORS allowlists this site's origin).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.ruudjuffermans.nl}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://ruudjuffermans.nl}
+    environment:
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-https://ruudjuffermans.nl}
+    labels:
+      # Registers a Traefik compress middleware (gzip/brotli/zstd on Traefik
+      # v3) as `website-compress@docker`. The Next standalone server itself
+      # only gzips, so a brotli-only client currently gets ~590 KB of
+      # uncompressed homepage HTML. The router lives in Dokploy's dynamic
+      # config, not in these labels — attach `website-compress@docker` to it
+      # in Dokploy (domain → Traefik config) to activate this.
+      - traefik.http.middlewares.website-compress.compress=true
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+
+networks:
+  # Dokploy's proxy network; Traefik routes ruudjuffermans.nl (and www) here.
+  dokploy-network:
+    external: true

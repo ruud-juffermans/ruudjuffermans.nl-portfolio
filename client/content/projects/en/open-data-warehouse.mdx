@@ -1,0 +1,79 @@
+---
+title: "Open data warehouse: a Kimball star schema on RDW and CBS"
+industry: "Own project"
+summary: "End-to-end ELT platform on Dutch open data: Python ingestion, dbt transformations and a documented star schema — with tests and CI on every pull request."
+tags: ["dbt", "SQL", "Python", "DuckDB", "Data Engineering"]
+repo: "https://github.com/datavakwerk/nl-vehicle-warehouse"
+accent: "#3B82F6"
+stats:
+  - { label: "Star schema", value: "3 documented grains" }
+  - { label: "CI on every PR", value: "Lint + build + tests" }
+  - { label: "From zero", value: "One command" }
+---
+
+*Own project, built to show how I work. Everything described here is real and verifiable in the repo.*
+
+## Why this project
+
+You don't judge a data warehouse by the dashboard on top of it, but by what sits underneath: is the grain right, are the definitions pinned down, do errors get caught before they reach a report. This project builds that foundation in the open, on data anyone can check.
+
+Two public sources, both queryable without an API key:
+
+- **RDW open data** — registered vehicles, fuel types and inspection defects: transaction facts with millions of rows
+- **CBS StatLine** — the national vehicle fleet and the municipal classification: a periodic snapshot at municipality level
+
+The combination is deliberate. Two fact tables with different grains in one schema is exactly what dimensional modelling is about — and exactly where it goes wrong when the grain isn't made explicit.
+
+## The architecture
+
+```
+RDW / CBS API
+      │  Python ingestion (incremental, paginated, with retries)
+      ▼
+ data/raw/*.parquet
+      ▼
+ DuckDB:  staging  →  warehouse (dim_* / fct_*)  →  marts
+      ▼
+ dbt tests · dbt docs (lineage)
+```
+
+DuckDB because it's free and runs in CI. The same dbt project targets Snowflake or Databricks with a different profile; the models are written for that — no DuckDB-specific SQL outside the staging layer. The warehouse choice is not part of the modelling. That's exactly the point.
+
+## The star schema
+
+Every fact table states its **grain** explicitly: one sentence, no room for interpretation.
+
+| Fact table | One row per… | Type |
+| --- | --- | --- |
+| `fct_voertuig_registratie` | licence plate per ownership registration | transaction |
+| `fct_gebrek_constatering` | defect found per inspection per vehicle | transaction |
+| `fct_voertuigpark_gemeente` | municipality per reference year per fuel type | periodic snapshot |
+
+With dimensions for date (including Dutch public holidays), municipality, vehicle type, fuel and defect.
+
+## Design choices
+
+- **Why this grain.** `fct_voertuig_registratie` sits at the ownership-registration level, not the vehicle level: a vehicle changes owners, and that change is exactly the event you want to be able to count. At vehicle level you lose it.
+- **Why SCD type 2 on municipality.** The Netherlands redraws some municipal boundary almost every year. Without history, past figures shift retroactively — a classic silent error in management information.
+- **Why incremental loading.** The RDW vehicle dataset is too large for a full refresh per run. Incremental with a watermark on modification date, plus a documented full-refresh route for when the source definition changes.
+- **Why reproducible.** Every ingestion records a snapshot date and the selection query lives in the repo. A run can be repeated, a figure can be traced.
+
+## Quality and CI
+
+On every pull request GitHub Actions runs: `ruff` and `sqlfluff` as linters, then `dbt build` — models and tests. The dbt tests cover `unique` and `not_null` on every key, `relationships` from every foreign key to its dimension, `accepted_values` on reference columns, plus custom tests on the grain: no duplicate rows per grain definition.
+
+This is the same way of working I bring to any team: transformations as code, with a test at every step, so an error surfaces before anyone steers on the number.
+
+## In the repo
+
+- Ingestion from RDW and CBS, incremental and reproducible
+- dbt project with staging, warehouse and marts layers
+- Star schema with documented grain per fact table
+- Lint, build and tests in CI
+- Architecture diagram and lineage documentation in the README
+- Published page on the marts (Evidence)
+- One `make` command from empty directory to queryable warehouse
+
+## Technology
+
+Python, dbt, DuckDB, SQL, GitHub Actions, ruff, sqlfluff, Make
