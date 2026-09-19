@@ -23,7 +23,7 @@ import {
 import { getProjectItem } from "@/lib/content";
 import { absoluteUrl, buildAlternates, buildOpenGraph, SITE_URL } from "@/lib/seo";
 import { routing, type Locale } from "@/i18n/routing";
-import { ACCENT, CONTENT, REPO_URL, SLUG } from "./content";
+import { ACCENT, CONTENT, LIVE_URL, REPO_URL, SLUG } from "./content";
 
 // Bespoke page for digital-twin. It shadows the generic /projects/[slug]
 // article for this slug (see CUSTOM_PROJECT_PAGES); the project's MDX file
@@ -63,7 +63,7 @@ export default async function DigitalTwinPage({
   setRequestLocale(locale);
   const c = CONTENT[locale];
   const meta = getProjectItem(locale, SLUG)?.meta;
-  const labels = { repo: c.ui.repo, allProjects: c.ui.allProjects, back: c.ui.back };
+  const labels = { repo: c.ui.repo, live: c.ui.live, allProjects: c.ui.allProjects, back: c.ui.back };
 
   return (
     <>
@@ -95,6 +95,7 @@ export default async function DigitalTwinPage({
         facts={c.facts}
         stats={c.stats}
         repoUrl={REPO_URL}
+        liveUrl={LIVE_URL}
         labels={labels}
       >
         <FigureBlock figure={c.hero} priority />
@@ -189,6 +190,7 @@ export default async function DigitalTwinPage({
         skills={c.shows.skills}
         closing={c.shows.closing}
         repoUrl={REPO_URL}
+        liveUrl={LIVE_URL}
         labels={labels}
         footnotes={[c.ui.scope, c.ui.article]}
       />

@@ -10,6 +10,11 @@ import type { Callout, Figure, TitledItem } from "@/components/ProjectPageKit";
 export const SLUG = "digital-twin";
 export const ACCENT = "#F59E0B";
 export const REPO_URL = "https://github.com/datavakwerk/digital-twin";
+// The running assistant, deployed next to this site (twin.ruudjuffermans.nl).
+// Read from NEXT_PUBLIC_TWIN_URL at build time; while it is unset the
+// "Try it live" buttons on this page and the homepage are not rendered, so
+// the site never ships a dead link before the assistant is actually up.
+export const LIVE_URL: string | undefined = process.env.NEXT_PUBLIC_TWIN_URL || undefined;
 const IMG = "/images/projects/digital-twin";
 
 export interface CodeItem {
@@ -27,6 +32,7 @@ export interface PageContent {
   stats: { label: string; value: string }[];
   ui: {
     repo: string;
+    live: string;
     allProjects: string;
     back: string;
     article: string;
@@ -111,6 +117,7 @@ const nl: PageContent = {
   ],
   ui: {
     repo: "Bekijk de code op GitHub",
+    live: "Probeer de assistent live",
     allProjects: "Alle projecten",
     back: "Terug naar projecten",
     article: "Achtergrondartikel op het blog: “Een digital-twin die alleen zegt wat hij kan bewijzen”.",
@@ -390,6 +397,7 @@ const en: PageContent = {
   ],
   ui: {
     repo: "View the code on GitHub",
+    live: "Try the assistant live",
     allProjects: "All projects",
     back: "Back to projects",
     article: "Background article on the blog: “A digital twin that only says what it can prove” (in Dutch).",

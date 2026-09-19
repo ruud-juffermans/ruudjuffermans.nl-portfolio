@@ -75,6 +75,7 @@ Configuration (see [`.env.example`](.env.example)):
 | ---------------------- | -------------------------------------------------------- | ----------- |
 | `NEXT_PUBLIC_API_URL`  | Platform API origin; empty = same-origin + dev rewrite   | *(empty)* |
 | `NEXT_PUBLIC_SITE_URL` | Public site URL (metadata, www→apex redirect)            | `http://localhost:3000` |
+| `NEXT_PUBLIC_TWIN_URL` | Digital-twin assistant URL; empty hides "Try it live"    | *(empty)* |
 
 ## Content
 

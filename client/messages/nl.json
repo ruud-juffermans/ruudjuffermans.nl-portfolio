@@ -179,7 +179,8 @@
           "f3Title": "Geëvalueerde retrieval",
           "f3Body": "Retrievalkwaliteit gemeten tegen een testset met LangFuse-tracing — geen demo die één keer goed ging."
         }
-      }
+      },
+      "live": "Probeer hem live"
     },
     "blog": {
       "eyebrow": "Blog",

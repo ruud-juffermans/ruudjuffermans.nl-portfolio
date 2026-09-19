@@ -179,7 +179,8 @@
           "f3Title": "Evaluated retrieval",
           "f3Body": "Retrieval quality is measured against a test set with LangFuse tracing — not a demo that went well once."
         }
-      }
+      },
+      "live": "Try it live"
     },
     "blog": {
       "eyebrow": "Blog",
