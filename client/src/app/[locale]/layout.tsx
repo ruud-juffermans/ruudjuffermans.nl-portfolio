@@ -82,6 +82,15 @@ export default async function LocaleLayout({
 
   const tc = await getTranslations({ locale, namespace: "common" });
   const apiOrigin = process.env.NEXT_PUBLIC_API_URL;
+  // The digital-twin assistant's ~2 KB widget loader. It injects a floating
+  // chat button; the chat itself runs in an iframe on the twin's origin
+  // (created on first click), so this site never calls the twin's API. The
+  // loader derives its origin from its own script src, hence the full URL.
+  // Unset until the assistant is deployed — see NEXT_PUBLIC_TWIN_URL in
+  // .env.example; next.config.ts allows the same origin in the CSP.
+  const twinWidget = process.env.NEXT_PUBLIC_TWIN_URL
+    ? new URL("/widget.js", process.env.NEXT_PUBLIC_TWIN_URL).href
+    : null;
 
   return (
     <html
@@ -109,6 +118,7 @@ export default async function LocaleLayout({
             <Footer />
           </ThemeRegistry>
         </NextIntlClientProvider>
+        {twinWidget ? <script src={twinWidget} defer /> : null}
       </body>
     </html>
   );

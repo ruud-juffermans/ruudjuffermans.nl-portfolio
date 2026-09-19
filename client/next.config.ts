@@ -22,13 +22,23 @@ const nextConfig: NextConfig = {
     // overlay it renders itself, so no frame-src is required. The diagram XML
     // is served from this origin and never sent anywhere.
     const DRAWIO = "https://viewer.diagrams.net";
+    //
+    // The digital-twin assistant (NEXT_PUBLIC_TWIN_URL, e.g.
+    // https://twin.ruudjuffermans.nl) serves widget.js — the floating chat
+    // launcher loaded in [locale]/layout.tsx — and the chat iframe it opens.
+    // So: script-src for the loader, frame-src for the iframe. Nothing else:
+    // the iframe talks to the twin's API from its own origin, and the
+    // launcher's icons are inline SVG. Its injected <style> is covered by
+    // style-src 'unsafe-inline'. Omitted while the variable is unset.
+    const TWIN = process.env.NEXT_PUBLIC_TWIN_URL ? new URL(process.env.NEXT_PUBLIC_TWIN_URL).origin : "";
     const csp = [
       "default-src 'self'",
-      `script-src 'self' 'unsafe-inline' ${DRAWIO}`,
+      `script-src 'self' 'unsafe-inline' ${DRAWIO} ${TWIN}`.trimEnd(),
       `style-src 'self' 'unsafe-inline' ${DRAWIO}`,
       `img-src 'self' data: blob: ${DRAWIO}`,
       "font-src 'self'",
       `connect-src 'self' ${DRAWIO} ${process.env.NEXT_PUBLIC_API_URL || "https://api.ruudjuffermans.nl"}`,
+      ...(TWIN ? [`frame-src ${TWIN}`] : []),
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
