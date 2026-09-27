@@ -10,7 +10,7 @@ import type { Callout, Figure, TitledItem } from "@/components/ProjectPageKit";
 export const SLUG = "digital-twin";
 export const ACCENT = "#F59E0B";
 export const REPO_URL = "https://github.com/datavakwerk/digital-twin";
-// The running assistant, deployed next to this site (twin.ruudjuffermans.nl).
+// The running assistant, deployed next to this site (ai.ruudjuffermans.nl).
 // Read from NEXT_PUBLIC_TWIN_URL at build time; while it is unset the
 // "Try it live" buttons on this page and the homepage are not rendered, so
 // the site never ships a dead link before the assistant is actually up.

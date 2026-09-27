@@ -24,7 +24,7 @@ const nextConfig: NextConfig = {
     const DRAWIO = "https://viewer.diagrams.net";
     //
     // The digital-twin assistant (NEXT_PUBLIC_TWIN_URL, e.g.
-    // https://twin.ruudjuffermans.nl) serves widget.js — the floating chat
+    // https://ai.ruudjuffermans.nl) serves widget.js — the floating chat
     // launcher loaded in [locale]/layout.tsx — and the chat iframe it opens.
     // So: script-src for the loader, frame-src for the iframe. Nothing else:
     // the iframe talks to the twin's API from its own origin, and the
