@@ -30,8 +30,12 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # (ruudjuffermans-server), reached cross-origin; its CORS allowlists this site.
 ARG NEXT_PUBLIC_API_URL=https://api.ruudjuffermans.nl
 ARG NEXT_PUBLIC_SITE_URL=https://ruudjuffermans.nl
+# No default: the digital-twin "Try it live" buttons stay hidden until the
+# assistant is deployed and this is set (see .env.example).
+ARG NEXT_PUBLIC_TWIN_URL=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_TWIN_URL=$NEXT_PUBLIC_TWIN_URL
 RUN npm run build
 
 FROM base AS runner

@@ -12,6 +12,8 @@ services:
         # API cross-origin (its CORS allowlists this site's origin).
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.ruudjuffermans.nl}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://ruudjuffermans.nl}
+        # Empty until the digital-twin assistant is live; hides its buttons.
+        NEXT_PUBLIC_TWIN_URL: ${NEXT_PUBLIC_TWIN_URL:-}
     environment:
       - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-https://ruudjuffermans.nl}
     labels:

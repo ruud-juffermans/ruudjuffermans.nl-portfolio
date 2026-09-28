@@ -29,6 +29,9 @@ export interface HoodVariant {
   github: string;
   githubLabel: string;
   projectLabel: string;
+  /** Running deployment, when the project has one. */
+  live?: string;
+  liveLabel?: string;
 }
 
 // Code panels stay untranslated — code is code in either locale. Keyed by
@@ -162,6 +165,11 @@ export default function UnderTheHood({
               <a className={styles.allLink} href={v.github} target="_blank" rel="noreferrer">
                 {v.githubLabel} <span aria-hidden="true">→</span>
               </a>
+              {v.live && v.liveLabel ? (
+                <a className={styles.allLink} href={v.live} target="_blank" rel="noreferrer">
+                  {v.liveLabel} <span aria-hidden="true">→</span>
+                </a>
+              ) : null}
             </div>
           </div>
 

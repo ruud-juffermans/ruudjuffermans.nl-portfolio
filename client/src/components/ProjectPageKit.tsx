@@ -15,6 +15,7 @@ import Grid from "@mui/material/Grid2";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import GitHubIcon from "@mui/icons-material/GitHub";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { Link } from "@/i18n/navigation";
 import Reveal from "@/components/Reveal";
 import SplitText from "@/components/SplitText";
@@ -495,6 +496,7 @@ export function ProjectHero({
   facts,
   stats,
   repoUrl,
+  liveUrl,
   labels,
   children,
 }: {
@@ -507,7 +509,9 @@ export function ProjectHero({
   facts: string[];
   stats: { label: string; value: string }[];
   repoUrl: string;
-  labels: { repo: string; allProjects: string; back: string };
+  /** Running deployment, when the project has one; adds a primary button. */
+  liveUrl?: string;
+  labels: { repo: string; live?: string; allProjects: string; back: string };
   /** The hero figure, rendered below the stats. */
   children?: ReactNode;
 }) {
@@ -547,9 +551,23 @@ export function ProjectHero({
                 <Chip key={tag} label={tag} size="small" variant="outlined" />
               ))}
             </Box>
-            <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" }, mt: 4 }}>
+            <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" }, mt: 4, flexWrap: "wrap" }}>
+              {liveUrl && labels.live ? (
+                <Button
+                  variant="contained"
+                  size="large"
+                  component="a"
+                  href={liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  endIcon={<OpenInNewIcon />}
+                  sx={{ px: 5, width: { xs: "100%", sm: "auto" } }}
+                >
+                  {labels.live}
+                </Button>
+              ) : null}
               <Button
-                variant="contained"
+                variant={liveUrl ? "outlined" : "contained"}
                 size="large"
                 component="a"
                 href={repoUrl}
@@ -629,6 +647,7 @@ export function ProjectClosing({
   skills,
   closing,
   repoUrl,
+  liveUrl,
   labels,
   footnotes,
 }: {
@@ -637,7 +656,8 @@ export function ProjectClosing({
   skills: string[];
   closing: string;
   repoUrl: string;
-  labels: { repo: string; allProjects: string };
+  liveUrl?: string;
+  labels: { repo: string; live?: string; allProjects: string };
   footnotes: string[];
 }) {
   return (
@@ -694,17 +714,46 @@ export function ProjectClosing({
               gap: 2,
               flexDirection: { xs: "column", sm: "row" },
               alignItems: { xs: "stretch", sm: "center" },
+              flexWrap: "wrap",
             }}
           >
+            {liveUrl && labels.live ? (
+              <Button
+                variant="contained"
+                size="large"
+                component="a"
+                href={liveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                endIcon={<OpenInNewIcon />}
+                sx={{ px: 5 }}
+              >
+                {labels.live}
+              </Button>
+            ) : null}
             <Button
-              variant="contained"
+              variant={liveUrl ? "outlined" : "contained"}
               size="large"
               component="a"
               href={repoUrl}
               target="_blank"
               rel="noopener noreferrer"
               startIcon={<GitHubIcon />}
-              sx={{ px: 5 }}
+              sx={{
+                px: 5,
+                ...(liveUrl
+                  ? {
+                      color: palette.white,
+                      borderColor: "rgba(255,255,255,0.28)",
+                      "@media (hover: hover)": {
+                        "&:hover": {
+                          borderColor: palette.white,
+                          backgroundColor: "rgba(255,255,255,0.08)",
+                        },
+                      },
+                    }
+                  : {}),
+              }}
             >
               {labels.repo}
             </Button>

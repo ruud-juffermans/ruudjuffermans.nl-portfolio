@@ -32,6 +32,7 @@ import Availability from "@/components/Availability";
 import ProofStrip from "@/components/ProofStrip";
 import PrinciplesAccordion from "@/components/PrinciplesAccordion";
 import { getBlogPosts } from "@/lib/content";
+import { LIVE_URL as TWIN_LIVE_URL } from "./projects/digital-twin/content";
 import JsonLd from "@/components/JsonLd";
 import { buildAlternates, buildOpenGraph, formatDate, SITE_URL } from "@/lib/seo";
 import { hasLocale } from "next-intl";
@@ -166,13 +167,19 @@ export default async function Home({
     ],
   };
   const hoodVariants = [
-    { key: "digital-twin", github: "https://github.com/datavakwerk/digital-twin" },
+    {
+      key: "digital-twin",
+      github: "https://github.com/datavakwerk/digital-twin",
+      live: TWIN_LIVE_URL,
+    },
     { key: "open-data-warehouse", github: "https://github.com/datavakwerk/nl-vehicle-warehouse" },
     { key: "ov-streaming-pipeline", github: "https://github.com/datavakwerk/ov-streaming-pipeline" },
     { key: "strafrecht-rag", github: "https://github.com/datavakwerk/strafrecht-rag" },
-  ].map(({ key, github }) => ({
+  ].map(({ key, github, live }: { key: string; github: string; live?: string }) => ({
     key,
     github,
+    live,
+    liveLabel: t("underhood.live"),
     toggleLabel: t(`underhood.projects.${key}.toggle`),
     eyebrow: t("underhood.eyebrow"),
     title: t(`underhood.projects.${key}.title`),
