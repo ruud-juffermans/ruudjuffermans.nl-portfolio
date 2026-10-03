@@ -86,8 +86,11 @@ export default async function LocaleLayout({
   // chat button; the chat itself runs in an iframe on the twin's origin
   // (created on first click), so this site never calls the twin's API. The
   // loader derives its origin from its own script src, hence the full URL.
-  // Unset until the assistant is deployed — see NEXT_PUBLIC_TWIN_URL in
-  // .env.example; next.config.ts allows the same origin in the CSP.
+  // data-theme-attribute names the <html> attribute the theme switcher sets
+  // (see InitColorSchemeScript below), so the chat follows this site's
+  // light/dark mode rather than the OS. Unset until the assistant is
+  // deployed — see NEXT_PUBLIC_TWIN_URL in .env.example; next.config.ts
+  // allows the same origin in the CSP.
   const twinWidget = process.env.NEXT_PUBLIC_TWIN_URL
     ? new URL("/widget.js", process.env.NEXT_PUBLIC_TWIN_URL).href
     : null;
@@ -118,7 +121,9 @@ export default async function LocaleLayout({
             <Footer />
           </ThemeRegistry>
         </NextIntlClientProvider>
-        {twinWidget ? <script src={twinWidget} defer /> : null}
+        {twinWidget ? (
+          <script src={twinWidget} data-theme-attribute="data-mui-color-scheme" defer />
+        ) : null}
       </body>
     </html>
   );
